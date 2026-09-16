@@ -179,3 +179,16 @@ cython_debug/
 #  refer to https://docs.cursor.com/context/ignore-files
 .cursorignore
 .cursorindexingignore
+
+# Local science inputs, caches, figures, and temporarily untracked notebooks
+/product/
+/result/
+/notebooks/
+/data/
+/results/
+.DS_Store
+
+# Temporarily exclude research workflows and tests from commits
+/tests/
+/scripts/
+/configs/

@@ -1,0 +1,9 @@
+appdirs
+astropy
+matplotlib
+numpy
+photutils
+PyYAML
+reproject
+scipy
+torch

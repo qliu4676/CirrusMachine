@@ -1,0 +1,2 @@
+# Core runtime dependencies are declared in setup.py.
+-e .
