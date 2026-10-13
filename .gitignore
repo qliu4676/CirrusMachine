@@ -206,3 +206,9 @@ cython_debug/
 
 # Historical implementations are retained only for local research workflows.
 /src/cirrusmachine/legacy/
+
+# Share the current example; keep historical notebooks local.
+!/notebooks/
+/notebooks/*
+!/notebooks/cutout_ddV_modeling.ipynb
+!/notebooks/cutout_ddV_helpers.py

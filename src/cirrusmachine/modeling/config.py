@@ -1,4 +1,4 @@
-"""Validated numerical settings for the J=5 cirrus and halo model."""
+"""Numerical settings for cirrus and halo modeling."""
 
 import math
 from dataclasses import asdict, dataclass, field, fields
@@ -27,13 +27,13 @@ class ModelingConfig:
 
     device: str = "auto"
     pixel_scale: float = 0.9
-    beam_fwhm: float = 36.0
+    beam_FWHM: float = 36.0
     scales: int = 5
     orientations: int = 8
     minimum_kernel_coverage: float = 0.55
-    orientation_pool_fwhm: float = 54.6
-    texture_highpass_fwhm: float = 40.249
-    cdf_fwhm: float = 40.24922359499622
+    orientation_pool_FWHM: float = 54.6
+    texture_highpass_FWHM: float = 40.249
+    CDF_FWHM: float = 40.24922359499622
     beta_grid: tuple[float, ...] = (1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5)
     split_sigma_pixels: float = 12.0
     broad_length_pixels: float = 60.0
@@ -64,10 +64,10 @@ class ModelingConfig:
             raise ValueError("This implementation preserves J=5 and L=8.")
         for name in (
             "pixel_scale",
-            "beam_fwhm",
-            "orientation_pool_fwhm",
-            "texture_highpass_fwhm",
-            "cdf_fwhm",
+            "beam_FWHM",
+            "orientation_pool_FWHM",
+            "texture_highpass_FWHM",
+            "CDF_FWHM",
             "split_sigma_pixels",
             "broad_length_pixels",
             "prior_lowpass_pixels",
@@ -128,6 +128,16 @@ def load_config(path: str | Path) -> ModelingConfig:
     raw = yaml.safe_load(Path(path).read_text())
     if not isinstance(raw, dict):
         raise ValueError("Configuration must be a mapping")
+    for old, new in {
+        "beam_fwhm": "beam_FWHM",
+        "orientation_pool_fwhm": "orientation_pool_FWHM",
+        "texture_highpass_fwhm": "texture_highpass_FWHM",
+        "cdf_fwhm": "CDF_FWHM",
+    }.items():
+        if old in raw:
+            if new in raw:
+                raise ValueError(f"Specify only {new}, not both spellings")
+            raw[new] = raw.pop(old)
     unknown = set(raw) - {f.name for f in fields(ModelingConfig)}
     if unknown:
         raise ValueError(f"Unknown modeling settings: {sorted(unknown)}")

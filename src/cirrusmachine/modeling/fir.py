@@ -9,16 +9,16 @@ from .calibration import NumpyOperators, calibration_signature
 from .operators import as_numpy, resolve_device, to_tensor
 
 
-def prepare_fir_constraint(
+def prepare_FIR_constraint(
     field,
     image,
     error,
     coverage,
     holes,
-    fir_wcs,
+    FIR_WCS,
     config,
     *,
-    effective_fwhm,
+    effective_FWHM,
     sample_stride=4,
     sample_margin=90,
     calibration_margin=200,
@@ -31,11 +31,11 @@ def prepare_fir_constraint(
         Working optical canvas with its WCS.
     image, error, coverage, holes : ndarray
         Native FIR map and 1-sigma error in MJy/sr, coverage and exclusion mask.
-    fir_wcs : astropy.wcs.WCS
+    FIR_WCS : astropy.wcs.WCS
         WCS of the native FIR grid.
-    effective_fwhm : float
+    effective_FWHM : float
         Actual effective resolution of the supplied FIR image in arcsec.
-        Must equal config.beam_fwhm. No filled FIR samples enter the likelihood.
+        Must equal config.beam_FWHM. No filled FIR samples enter the likelihood.
 
     Returns
     -------
@@ -43,9 +43,9 @@ def prepare_fir_constraint(
         Normalized optical targets, covariance Cholesky, sample coordinates,
         and an interpolated guide used only for initialization.
     """
-    if field.wcs is None:
+    if field.WCS is None:
         raise ValueError("An optical WCS is required for FIR alignment")
-    if not np.isclose(effective_fwhm, config.beam_fwhm):
+    if not np.isclose(effective_FWHM, config.beam_FWHM):
         raise ValueError("Input FIR resolution differs from the requested beam")
     if len({np.shape(v) for v in (image, error, coverage, holes)}) != 1:
         raise ValueError("FIR image, error, coverage and holes must share a grid")
@@ -55,14 +55,14 @@ def prepare_fir_constraint(
             "FIR sample stride and margins must be nonnegative (stride positive)"
         )
     d = field.normalized(config)
-    w = field.wcs
-    hw = fir_wcs
+    w = field.WCS
+    hw = FIR_WCS
     n = field.image.shape[0]
-    smooth_observed = NumpyOperators(field.psf, config).smooth_observed
+    smooth_observed = NumpyOperators(field.PSF, config).smooth_observed
     yh, xh = np.indices(image.shape)
-    ra, dec = hw.all_pix2world(xh, yh, 0)
-    x, y = w.all_world2pix(ra, dec, 0)
-    sigma = config.beam_fwhm / config.pixel_scale / 2.354820045
+    RA, Dec = hw.all_pix2world(xh, yh, 0)
+    x, y = w.all_world2pix(RA, Dec, 0)
+    sigma = config.beam_FWHM / config.pixel_scale / 2.354820045
     eligible = (
         (x > sample_margin)
         & (x < n - sample_margin)
@@ -175,8 +175,8 @@ def prepare_fir_constraint(
         None, :, None, :
     ].astype("f4")
     target = a * hh + b
-    ra, dec = w.all_pix2world(*np.meshgrid(np.arange(n), np.arange(n)), 0)
-    ix, iy = hw.all_world2pix(ra, dec, 0)
+    RA, Dec = w.all_pix2world(*np.meshgrid(np.arange(n), np.arange(n)), 0)
+    ix, iy = hw.all_world2pix(RA, Dec, 0)
     hsafe, hcov = smooth_observed(
         image, eligible | (coverage > 0) & ~holes & np.isfinite(image), 1.5
     )
@@ -185,7 +185,7 @@ def prepare_fir_constraint(
     )
     return dict(
         optical_signature=np.array(calibration_signature(field, config)),
-        effective_fwhm=effective_fwhm,
+        effective_FWHM=effective_FWHM,
         sample_grid=grid,
         target=target,
         chol=chol,

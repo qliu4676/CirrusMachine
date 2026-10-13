@@ -1,5 +1,7 @@
 """Alternating cirrus optimization and detached observed halo/sky estimation."""
 
+import logging
+import time
 from dataclasses import dataclass
 
 import numpy as np
@@ -7,9 +9,12 @@ import torch
 
 from .config import ModelingConfig
 from .halo import fit_halo
+from .logging import ModelingProgress
 from .operators import MaskedCovariance, as_numpy, beam_loss, resolve_device, to_tensor
 from .priors import initialize_cirrus
 from .statistics import Statistics, independent_targets
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -86,13 +91,15 @@ def run_cirrus_halo_modeling(
     config: ModelingConfig,
     *,
     extra_variance=None,
-    progress=None,
+    progress=True,
 ) -> list[ModelingResult]:
     """Optimize each supplied draw with fixed masks and alternating halo/sky updates.
 
     The six weights apply to S1/S2, P00, FIR, CDF, orientation and optical
     likelihood. Targets refresh from observed pixels every 25 steps; halo and
-    sky refresh every 10. ``progress`` receives a draw/step/loss dictionary.
+    sky refresh every 10. A tqdm bar refreshes at 10% milestones per draw.
+    Use ``progress=False`` to hide it, or pass a callback receiving a
+    draw/step/loss/learning_rate dictionary at the same milestones.
     ``extra_variance`` may supply a validated, frozen shared allowance in
     normalized intensity squared; otherwise it is derived from allowance_seeds.
     """
@@ -100,10 +107,18 @@ def run_cirrus_halo_modeling(
     if not initializations:
         raise ValueError("At least one initial realization is required")
     if not np.isclose(
-        float(prior.beam["sigma"]), config.beam_fwhm / config.pixel_scale / 2.354820045
+        float(prior.beam["sigma"]), config.beam_FWHM / config.pixel_scale / 2.354820045
     ):
         raise ValueError("FIR beam mismatch; rebuild the prior")
     device = resolve_device(config.device)
+    started = time.perf_counter()
+    logger.info(
+        "Preparing %d draw(s) on %s: %d steps each, %.1f arcsec FIR likelihood",
+        len(initializations),
+        device,
+        config.steps,
+        config.beam_FWHM,
+    )
     d = field.normalized(config)
     nd, targets, beam = prior.calibration.noise, prior.calibration.targets, prior.beam
     if extra_variance is None:
@@ -189,118 +204,120 @@ def run_cirrus_halo_modeling(
                 (alpha * u) ** 2 + ((1 - alpha) * sd) ** 2
             ).sqrt()
 
-        for step in range(config.steps):
-            if step % config.target_refresh_steps == 0:
-                target, uncertainty = independent_targets(
-                    m,
-                    obs - H - sky,
-                    c.detach(),
-                    nd["kernels"],
-                    nd["variances"],
-                    config.noise_seeds,
-                    factors,
-                    offsets,
-                    sigmas,
-                )
-                target_history.append(
-                    dict(
-                        step=step,
-                        target=[as_numpy(t) for t in target],
-                        uncertainty=[as_numpy(t) for t in uncertainty],
+        logger.debug("Draw %d seeds: %s", index + 1, initial.seeds)
+        with ModelingProgress(
+            config.steps, index, len(initializations), progress
+        ) as status:
+            for step in range(config.steps):
+                if step % config.target_refresh_steps == 0:
+                    target, uncertainty = independent_targets(
+                        m,
+                        obs - H - sky,
+                        c.detach(),
+                        nd["kernels"],
+                        nd["variances"],
+                        config.noise_seeds,
+                        factors,
+                        offsets,
+                        sigmas,
                     )
-                )
-            lr = config.learning_rates[
-                min(step // config.stage_steps, len(config.learning_rates) - 1)
-            ]
-            for group in opt.param_groups:
-                group["lr"] = lr
-            opt.zero_grad()
-            stats, parts = m.full(c), []
-            for j in range(3):
-                a, u = chosen(j, target, uncertainty)
-                dims = tuple(range(1, a.ndim))
-                den = a.square().mean(dims, keepdim=True).clamp_min(
-                    1e-6
-                ) + u.square().mean(dims, keepdim=True)
-                reliable = (a > u).float()
-                parts.append(
-                    (((stats[j] - a) ** 2 / den) * reliable).sum()
-                    / reliable.sum().clamp_min(1)
-                )
-            beam_term = beam_loss(c, grid, bt, chol, float(beam["sigma"]))
-            q, qt = m.cdf(c), target[3].sort(dim=-1).values
-            cdf = (
-                (q - qt) ** 2
-                / (
-                    qt.square().mean(1, keepdim=True).clamp_min(0.01)
-                    + uncertainty[3] ** 2
-                )
-            ).mean()
-            e, et, eu = m.angular_energy(c), target[4].clamp_min(0), uncertainty[4]
-            am = (et * phase).sum(1).abs()
-            confidence = am**2 / (am**2 + eu.square().sum(1) + 1e-10)
-            orientation = (
-                (
+                    target_history.append(
+                        dict(
+                            step=step,
+                            target=[as_numpy(t) for t in target],
+                            uncertainty=[as_numpy(t) for t in uncertainty],
+                        )
+                    )
+                lr = config.learning_rates[
+                    min(step // config.stage_steps, len(config.learning_rates) - 1)
+                ]
+                for group in opt.param_groups:
+                    group["lr"] = lr
+                opt.zero_grad()
+                stats, parts = m.full(c), []
+                for j in range(3):
+                    a, u = chosen(j, target, uncertainty)
+                    dims = tuple(range(1, a.ndim))
+                    den = a.square().mean(dims, keepdim=True).clamp_min(
+                        1e-6
+                    ) + u.square().mean(dims, keepdim=True)
+                    reliable = (a > u).float()
+                    parts.append(
+                        (((stats[j] - a) ** 2 / den) * reliable).sum()
+                        / reliable.sum().clamp_min(1)
+                    )
+                beam_term = beam_loss(c, grid, bt, chol, float(beam["sigma"]))
+                q, qt = m.CDF(c), target[3].sort(dim=-1).values
+                CDF = (
+                    (q - qt) ** 2
+                    / (
+                        qt.square().mean(1, keepdim=True).clamp_min(0.01)
+                        + uncertainty[3] ** 2
+                    )
+                ).mean()
+                e, et, eu = m.angular_energy(c), target[4].clamp_min(0), uncertainty[4]
+                am = (et * phase).sum(1).abs()
+                confidence = am**2 / (am**2 + eu.square().sum(1) + 1e-10)
+                orientation = (
                     (
                         (
-                            e / e.sum(1, keepdim=True).clamp_min(1e-6)
-                            - et / et.sum(1, keepdim=True).clamp_min(1e-6)
+                            (
+                                e / e.sum(1, keepdim=True).clamp_min(1e-6)
+                                - et / et.sum(1, keepdim=True).clamp_min(1e-6)
+                            )
+                            * 8
                         )
-                        * 8
-                    )
-                    ** 2
-                ).mean(1)
-                * confidence
-            ).sum() / confidence.sum().clamp_min(1)
-            optical = (
-                like.quadratic(obs - c - H - sky)
-                * float(d["likelihood_mask"].sum())
-                / d["original_normalizer"]
-            )
-            terms = torch.stack(
-                [
-                    (parts[0] + parts[1]) / 2,
-                    parts[2],
-                    beam_term,
-                    cdf,
-                    orientation,
-                    optical,
-                ]
-            )
-            penalty = (
-                config.prior_weight
-                * (
-                    precision * torch.fft.fft2(c - guide, norm="ortho").abs().square()
-                ).sum()
-                / effective
-            )
-            loss = (terms * weights).sum() + penalty
-            if not torch.isfinite(loss):
-                raise RuntimeError(f"Nonfinite objective at step {step}")
-            loss.backward()
-            torch.nn.utils.clip_grad_norm_([c], 10)
-            opt.step()
-            history.append(
-                [
-                    step + 1,
-                    float(loss.detach()),
-                    *terms.detach().tolist(),
-                    float(penalty.detach()),
-                ]
-            )
-            solves.append(dict(like.last))
-            if (step + 1) % config.halo_refresh_steps == 0:
-                fresh, halo_info = _halo(field, config, d, c, halo_info)
-                halo = (1 - config.halo_damping) * halo + config.halo_damping * fresh
-                sky = halo_info["sky"]["value_ADU"] / d["std"]
-                H = tensor(halo)
-                halo_history.append(dict(step=step + 1, **halo_info))
-            if progress:
-                progress(
-                    dict(
-                        draw=index, step=step + 1, loss=history[-1][1], learning_rate=lr
-                    )
+                        ** 2
+                    ).mean(1)
+                    * confidence
+                ).sum() / confidence.sum().clamp_min(1)
+                optical = (
+                    like.quadratic(obs - c - H - sky)
+                    * float(d["likelihood_mask"].sum())
+                    / d["original_normalizer"]
                 )
+                terms = torch.stack(
+                    [
+                        (parts[0] + parts[1]) / 2,
+                        parts[2],
+                        beam_term,
+                        CDF,
+                        orientation,
+                        optical,
+                    ]
+                )
+                penalty = (
+                    config.prior_weight
+                    * (
+                        precision
+                        * torch.fft.fft2(c - guide, norm="ortho").abs().square()
+                    ).sum()
+                    / effective
+                )
+                loss = (terms * weights).sum() + penalty
+                if not torch.isfinite(loss):
+                    raise RuntimeError(f"Nonfinite objective at step {step}")
+                loss.backward()
+                torch.nn.utils.clip_grad_norm_([c], 10)
+                opt.step()
+                history.append(
+                    [
+                        step + 1,
+                        float(loss.detach()),
+                        *terms.detach().tolist(),
+                        float(penalty.detach()),
+                    ]
+                )
+                solves.append(dict(like.last))
+                if (step + 1) % config.halo_refresh_steps == 0:
+                    fresh, halo_info = _halo(field, config, d, c, halo_info)
+                    halo = (
+                        1 - config.halo_damping
+                    ) * halo + config.halo_damping * fresh
+                    sky = halo_info["sky"]["value_ADU"] / d["std"]
+                    H = tensor(halo)
+                    halo_history.append(dict(step=step + 1, **halo_info))
+                status.update(step + 1, history[-1][1], lr)
         halo, halo_info = _halo(field, config, d, c, halo_info)
         halo_history.append(dict(step=config.steps, final_fresh=True, **halo_info))
         sky = float(halo_info["sky"]["value_ADU"])
@@ -339,6 +356,13 @@ def run_cirrus_halo_modeling(
                 ),
             )
         )
+    logger.info(
+        "Completed %d draw(s) in %.1f s; final loss %.5g, sky %.5g ADU",
+        len(results),
+        time.perf_counter() - started,
+        history[-1][1],
+        sky,
+    )
     return results
 
 

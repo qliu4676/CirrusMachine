@@ -47,7 +47,7 @@ def test_uncached_calibration_and_conditional_initialization():
         assert max(cal.diagnostics["targets"]["heldout_mask_transfer_RMSE"][:3]) < 0.2
         assert max(cal.diagnostics["targets"]["hidden_value_invariance"]) == 0
         beam = dict(
-            sigma=config.beam_fwhm / config.pixel_scale / 2.354820045,
+            sigma=config.beam_FWHM / config.pixel_scale / 2.354820045,
             backbone=np.zeros((n, n)),
             optical_signature=calibration_signature(field, config),
         )

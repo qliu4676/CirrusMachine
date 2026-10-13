@@ -29,10 +29,10 @@ class FieldData:
     crop: tuple[slice, slice]
     center_xy: tuple[float, float]
     radius: np.ndarray
-    psf: np.ndarray
+    PSF: np.ndarray
     pixel_scale: float = 0.9
     exclusion_radius: float = 150.0
-    wcs: object = None
+    WCS: object = None
     metadata: dict = field(default_factory=dict)
     normalization: tuple[float, float] | None = None
 
@@ -70,13 +70,13 @@ class FieldData:
             and 0 <= self.center_xy[1] < self.image[self.crop].shape[0]
         ):
             raise ValueError("center_xy must lie inside the scientific crop")
-        self.psf = np.asarray(self.psf, dtype=float)
+        self.PSF = np.asarray(self.PSF, dtype=float)
         if (
-            self.psf.ndim != 2
-            or not np.isfinite(self.psf).all()
-            or not np.isclose(self.psf.sum(), 1.0, atol=1e-5)
+            self.PSF.ndim != 2
+            or not np.isfinite(self.PSF).all()
+            or not np.isclose(self.PSF.sum(), 1.0, atol=1e-5)
         ):
-            raise ValueError("psf must be a finite unit-sum delivered-VIS kernel")
+            raise ValueError("PSF must be a finite unit-sum delivered-VIS kernel")
         if self.normalization is None:
             self.normalization = (
                 float(self.image[self.donor].mean()),
@@ -143,12 +143,14 @@ def sersic_image(
     *,
     pixel_scale,
     axis_ratio=0.6,
-    pa_deg=30.0,
+    PA_deg=30.0,
     device="auto",
 ):
     """Evaluate summed intrinsic Sérsic intensities.
 
-    Each component supplies ``n``, ``re_arcsec``, and ``ie`` in image ADU.
+    Each component supplies ``n``, ``Re_arcsec``, and either ``Ie`` (intensity
+    at Re) or ``I0`` (central intensity), in image ADU. They obey
+    I0 = Ie * exp(b_n). The older ``ie`` and ``re_arcsec`` keys remain readable.
     Position angle runs counterclockwise from image +x; center uses (x, y).
     """
     if not 0 < axis_ratio <= 1 or pixel_scale <= 0:
@@ -159,7 +161,7 @@ def sersic_image(
         torch.arange(shape[1], device=device, dtype=torch.float64),
         indexing="ij",
     )
-    angle = np.deg2rad(pa_deg)
+    angle = np.deg2rad(PA_deg)
     u = (x - center_xy[0]) * np.cos(angle) + (y - center_xy[1]) * np.sin(angle)
     v = (
         -(x - center_xy[0]) * np.sin(angle) + (y - center_xy[1]) * np.cos(angle)
@@ -167,10 +169,23 @@ def sersic_image(
     r = pixel_scale * torch.hypot(u, v)
     out = torch.zeros_like(r)
     for comp in components:
-        n, re, ie = comp["n"], comp["re_arcsec"], comp["ie"]
-        if n <= 0 or re <= 0 or ie < 0:
+        amplitudes = [key for key in ("Ie", "I0", "ie") if key in comp]
+        radii = [key for key in ("Re_arcsec", "re_arcsec") if key in comp]
+        if len(amplitudes) != 1 or len(radii) != 1:
+            raise ValueError("Supply one of Ie/I0 (legacy ie), and one Re_arcsec")
+        n, Re, intensity = comp["n"], comp[radii[0]], comp[amplitudes[0]]
+        if (
+            not np.isfinite([n, Re, intensity]).all()
+            or n <= 0
+            or Re <= 0
+            or intensity < 0
+        ):
             raise ValueError("Sérsic n/Re must be positive and Ie nonnegative")
-        out += ie * torch.exp(-gammaincinv(2 * n, 0.5) * ((r / re).pow(1 / n) - 1))
+        b_n = gammaincinv(2 * n, 0.5)
+        if amplitudes[0] == "I0":
+            out += intensity * torch.exp(-b_n * (r / Re).pow(1 / n))
+        else:
+            out += intensity * torch.exp(-b_n * ((r / Re).pow(1 / n) - 1))
     return out
 
 
@@ -179,24 +194,24 @@ def prepare_injection(
     components,
     *,
     axis_ratio=0.6,
-    pa_deg=30.0,
-    psf_native=None,
+    PA_deg=30.0,
+    PSF_native=None,
     oversample=9,
     margin_pixels=24,
     device="auto",
 ) -> Injection:
     """Sample intrinsic light, convolve once, mean-bin, and add to the field.
 
-    ``psf_native`` must be sampled at working pixel_scale / oversample.
+    ``PSF_native`` must be sampled at working pixel_scale / oversample.
     Supply the detector PSF explicitly; the field PSF describes the working
     pixels and is used only by the cirrus texture model. No sky is injected.
     """
-    if psf_native is None:
+    if PSF_native is None:
         raise ValueError("Supply the PSF at the intrinsic sampling scale")
     if not isinstance(oversample, int) or oversample < 1 or margin_pixels < 0:
         raise ValueError("Invalid sampling or convolution margin")
     device = resolve_device(device)
-    kernel = to_tensor(psf_native, dtype=torch.float64, device=device)
+    kernel = to_tensor(PSF_native, dtype=torch.float64, device=device)
     if kernel.ndim != 2 or not torch.isfinite(kernel).all() or kernel.sum() <= 0:
         raise ValueError("Invalid detector PSF")
     kernel = kernel / kernel.sum()
@@ -206,6 +221,12 @@ def prepare_injection(
     cy = field.center_xy[1] + field.crop[0].start
     fine_center = ((cx + m + 0.5) * s - 0.5, (cy + m + 0.5) * s - 0.5)
     fine_shape = ((ny + 2 * m) * s, (nx + 2 * m) * s)
+    # Remove coordinate roundoff at integer detector samples: a steep central
+    # cusp can amplify tiny offsets that arise only from changing pixel grids.
+    tolerance = 8 * np.finfo(float).eps * max(fine_shape)
+    fine_center = tuple(
+        float(round(c)) if abs(c - round(c)) <= tolerance else c for c in fine_center
+    )
     # Match the reference's float32 intrinsic raster, without materializing
     # full-size coordinate/radius arrays at detector resolution.
     intrinsic = torch.empty(fine_shape, dtype=torch.float32, device=device)
@@ -217,7 +238,7 @@ def prepare_injection(
             components,
             pixel_scale=field.pixel_scale / s,
             axis_ratio=axis_ratio,
-            pa_deg=pa_deg,
+            PA_deg=PA_deg,
             device=device,
         )
     delivered = (
@@ -233,10 +254,10 @@ def prepare_injection(
         field.crop,
         field.center_xy,
         field.radius.copy(),
-        field.psf.copy(),
+        field.PSF.copy(),
         field.pixel_scale,
         field.exclusion_radius,
-        field.wcs,
+        field.WCS,
         dict(field.metadata),
     )
     return Injection(
@@ -245,14 +266,14 @@ def prepare_injection(
         dict(
             components=components,
             axis_ratio=axis_ratio,
-            pa_deg=pa_deg,
+            PA_deg=PA_deg,
             oversample=s,
             margin_pixels=m,
         ),
     )
 
 
-def load_field_data(path: str | Path, *, psf: np.ndarray) -> FieldData:
+def load_field_data(path: str | Path, *, PSF: np.ndarray) -> FieldData:
     """Load a portable, pickle-free working-grid NPZ (see modeling documentation)."""
     with np.load(path, allow_pickle=False) as z:
         crop = tuple(slice(int(a), int(b)) for a, b in z["crop"])
@@ -263,7 +284,7 @@ def load_field_data(path: str | Path, *, psf: np.ndarray) -> FieldData:
             crop,
             tuple(z["center_xy"]),
             z["radius"],
-            psf,
+            PSF,
             float(z["pixel_scale"]),
             float(z["exclusion_radius"]),
         )
@@ -273,16 +294,16 @@ def prepare_field_data(
     image,
     source_mask,
     target_mask,
-    psf,
+    PSF,
     *,
     center_xy,
     axis_ratio,
-    pa_deg,
+    PA_deg,
     native_pixel_scale=0.3,
     bin_factor=3,
     canvas_size=1024,
     exclusion_radius=150.0,
-    wcs=None,
+    WCS=None,
 ):
     """Mean-bin a native image and retain only complete source-clean bins.
 
@@ -291,7 +312,7 @@ def prepare_field_data(
     666 bins using native [1:1999]). The field center uses native (x, y) pixels;
     output center and WCS account for bin centers and FFT-canvas placement.
     Masks must be prepared before injection; no source detection runs here.
-    ``psf`` is the delivered PSF on the resulting working grid.
+    ``PSF`` is the delivered PSF on the resulting working grid.
     """
     image = np.asarray(image, dtype=float)
     source_mask = np.asarray(source_mask, bool)
@@ -333,7 +354,7 @@ def prepare_field_data(
         (center_xy[1] - sy - (bin_factor - 1) / 2) / bin_factor,
     )
     y, x = np.indices((ny, nx))
-    angle = np.deg2rad(pa_deg)
+    angle = np.deg2rad(PA_deg)
     u = (x - center[0]) * np.cos(angle) + (y - center[1]) * np.sin(angle)
     v = (
         -(x - center[0]) * np.sin(angle) + (y - center[1]) * np.cos(angle)
@@ -341,15 +362,15 @@ def prepare_field_data(
     pixel = native_pixel_scale * bin_factor
     radius = np.full(canvas.shape, np.inf)
     radius[crop] = pixel * np.hypot(u, v)
-    working_wcs = None
-    if wcs is not None:
-        working_wcs = wcs.slice(
+    working_WCS = None
+    if WCS is not None:
+        working_WCS = WCS.slice(
             (
                 slice(sy, sy + ny * bin_factor, bin_factor),
                 slice(sx, sx + nx * bin_factor, bin_factor),
             )
         )
-        working_wcs.wcs.crpix += [px, py]
+        working_WCS.wcs.crpix += [px, py]
     return FieldData(
         canvas,
         donor,
@@ -357,10 +378,10 @@ def prepare_field_data(
         crop,
         center,
         radius,
-        psf,
+        PSF,
         pixel,
         exclusion_radius,
-        working_wcs,
+        working_WCS,
         dict(
             native_pixel_scale=native_pixel_scale,
             bin_factor=bin_factor,

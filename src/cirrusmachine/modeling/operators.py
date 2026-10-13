@@ -125,7 +125,7 @@ def draw_noise(shape, kernels, variances, seed, *, device="cpu", dtype=torch.flo
     return out
 
 
-def psf_transfer(shape, kernel, *, device="cpu"):
+def PSF_transfer(shape, kernel, *, device="cpu"):
     """Transfer of the supplied delivered-VIS PSF, applied once to intrinsic texture."""
     kernel = to_tensor(kernel, dtype=torch.float64, device=device)
     if kernel.ndim != 2 or any(k > n for k, n in zip(kernel.shape, shape)):
@@ -140,7 +140,7 @@ def psf_transfer(shape, kernel, *, device="cpu"):
     return torch.fft.rfft2(torch.roll(canvas, (-(ny // 2), -(nx // 2)), (0, 1)))
 
 
-def power_field(shape, beta, seed, psf, theta=0.0, coherence=0.4, *, device="cpu"):
+def power_field(shape, beta, seed, PSF, theta=0.0, coherence=0.4, *, device="cpu"):
     """PSF-filtered Gaussian field with P(k) proportional to k**(-beta)."""
     fy = torch.fft.fftfreq(shape[0], dtype=torch.float64, device=device)[:, None]
     fx = torch.fft.rfftfreq(shape[1], dtype=torch.float64, device=device)[None, :]
@@ -150,7 +150,7 @@ def power_field(shape, beta, seed, psf, theta=0.0, coherence=0.4, *, device="cpu
     amp *= (1 + coherence * torch.cos(2 * (phi - theta))).clamp_min(0.05).sqrt()
     white = to_tensor(np.random.default_rng(seed).normal(size=shape), device=device)
     z = torch.fft.irfft2(
-        torch.fft.rfft2(white) * amp * psf_transfer(shape, psf, device=device), s=shape
+        torch.fft.rfft2(white) * amp * PSF_transfer(shape, PSF, device=device), s=shape
     )
     return z / z.std(correction=0)
 

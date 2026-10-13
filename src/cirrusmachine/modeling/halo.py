@@ -66,9 +66,9 @@ def clipped(x):
     return (float(a.mean()), float(a.std()), int(len(a)))
 
 
-def radius_map(shape, center, q, pa, pix=0.9):
+def radius_map(shape, center, q, PA, pix=0.9):
     y, x = np.indices(shape)
-    t = np.deg2rad(pa)
+    t = np.deg2rad(PA)
     u = (x - center[0]) * np.cos(t) + (y - center[1]) * np.sin(t)
     v = (-(x - center[0]) * np.sin(t) + (y - center[1]) * np.cos(t)) / q
     return pix * np.hypot(u, v)
@@ -108,19 +108,19 @@ def shape_values(radius, info):
         )
     e = np.minimum(np.linalg.norm(z, axis=-1), 2 / 3)
     q = (1 - e) / (1 + e)
-    pa = 0.5 * np.arctan2(z[..., 1], z[..., 0])
-    return (q, pa)
+    PA = 0.5 * np.arctan2(z[..., 1], z[..., 0])
+    return (q, PA)
 
 
 def nested(info, maxr):
     rs = np.geomspace(0.45, maxr, 180)
-    q, pa = shape_values(rs, info)
+    q, PA = shape_values(rs, info)
     a = np.linspace(0, 2 * np.pi, 128, endpoint=False)
     for i in range(len(rs) - 1):
-        x = rs[i] * (np.cos(a) * np.cos(pa[i]) - q[i] * np.sin(a) * np.sin(pa[i]))
-        y = rs[i] * (np.cos(a) * np.sin(pa[i]) + q[i] * np.sin(a) * np.cos(pa[i]))
-        u = x * np.cos(pa[i + 1]) + y * np.sin(pa[i + 1])
-        v = (-x * np.sin(pa[i + 1]) + y * np.cos(pa[i + 1])) / q[i + 1]
+        x = rs[i] * (np.cos(a) * np.cos(PA[i]) - q[i] * np.sin(a) * np.sin(PA[i]))
+        y = rs[i] * (np.cos(a) * np.sin(PA[i]) + q[i] * np.sin(a) * np.cos(PA[i]))
+        u = x * np.cos(PA[i + 1]) + y * np.sin(PA[i + 1])
+        v = (-x * np.sin(PA[i + 1]) + y * np.cos(PA[i + 1])) / q[i + 1]
         if np.max(np.hypot(u, v)) > rs[i + 1] * (1 + 1e-08):
             return False
     return True
@@ -156,9 +156,9 @@ def smooth_shape(iso, previous=None, pixel_scale=0.9):
         )
     r = np.array([i.sma * pixel_scale for i in good])
     q = np.array([1 - i.eps for i in good])
-    pa = np.array([i.pa for i in good])
+    PA = np.array([i.pa for i in good])
     z = ((1 - q) / (1 + q))[:, None] * np.stack(
-        [np.cos(2 * pa), np.sin(2 * pa)], axis=1
+        [np.cos(2 * PA), np.sin(2 * PA)], axis=1
     )
     lo = max(r.min(), 0.45)
     hi = max(r.max(), lo * 1.01)
@@ -210,9 +210,9 @@ def elliptical_coordinates(shape, center, info, pixel_scale=0.9):
     hi = lo / 0.2 + 0.01
     for _ in range(18):
         r = (lo + hi) / 2
-        q, pa = shape_values(r, info)
-        u = dx * np.cos(pa) + dy * np.sin(pa)
-        v = (-dx * np.sin(pa) + dy * np.cos(pa)) / q
+        q, PA = shape_values(r, info)
+        u = dx * np.cos(PA) + dy * np.sin(PA)
+        v = (-dx * np.sin(PA) + dy * np.cos(PA)) / q
         outside = np.hypot(u, v) > r
         lo = np.where(outside, r, lo)
         hi = np.where(outside, hi, r)
@@ -375,9 +375,9 @@ def radii(dx, dy, info):
     hi = lo / 0.2 + 0.01
     for _ in range(24):
         r = (lo + hi) * 0.5
-        q, pa = shape_values(r, info)
-        u = dx * np.cos(pa) + dy * np.sin(pa)
-        v = (-dx * np.sin(pa) + dy * np.cos(pa)) / q
+        q, PA = shape_values(r, info)
+        u = dx * np.cos(PA) + dy * np.sin(PA)
+        v = (-dx * np.sin(PA) + dy * np.cos(PA)) / q
         outside = np.hypot(u, v) > r
         lo = np.where(outside, r, lo)
         hi = np.where(outside, hi, r)

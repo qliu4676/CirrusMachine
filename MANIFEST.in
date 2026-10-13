@@ -1,2 +1,5 @@
 prune src/cirrusmachine/legacy
 prune tests/legacy
+include notebooks/cutout_ddV_modeling.ipynb
+include notebooks/cutout_ddV_helpers.py
+include configs/cutout_ddV.yaml

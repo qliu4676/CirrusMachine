@@ -1,4 +1,4 @@
-"""FIR-conditioned cirrus modeling and observed halo recovery with J=5 WST."""
+"""FIR-conditioned cirrus modeling and observed halo recovery."""
 
 from .calibration import StatisticalCalibration, calibrate_statistics
 from .config import DrawSeeds, ModelingConfig, load_config, save_config
@@ -10,9 +10,15 @@ from .data import (
     prepare_injection,
     sersic_image,
 )
-from .fir import prepare_fir_constraint
+from .fir import prepare_FIR_constraint
 from .io import load_calibration, save_calibration, save_modeling_results
-from .photometry import estimate_sky, measure_cumulative_light, measure_profile
+from .logging import configure_logging
+from .photometry import (
+    estimate_sky,
+    measure_cumulative_light,
+    measure_profile,
+    surface_brightness_zeropoint,
+)
 from .priors import (
     CirrusPrior,
     InitialRealization,
@@ -27,6 +33,7 @@ from .solver import (
 )
 
 __all__ = [
+    "configure_logging",
     "DrawSeeds",
     "ModelingConfig",
     "load_config",
@@ -39,7 +46,7 @@ __all__ = [
     "sersic_image",
     "StatisticalCalibration",
     "calibrate_statistics",
-    "prepare_fir_constraint",
+    "prepare_FIR_constraint",
     "CirrusPrior",
     "InitialRealization",
     "build_cirrus_prior",
@@ -50,6 +57,7 @@ __all__ = [
     "summarize_models",
     "estimate_sky",
     "measure_profile",
+    "surface_brightness_zeropoint",
     "measure_cumulative_light",
     "load_calibration",
     "save_calibration",

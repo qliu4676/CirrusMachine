@@ -84,7 +84,7 @@ class _WaveletMeasure:
         n = 128
         freq = torch.fft.fftfreq(n, device=self.device)
         sigma = (
-            config["orientation_pool_fwhm_arcsec"]
+            config["orientation_pool_FWHM_arcsec"]
             / config["pixel_scale"]
             / 2.354820045
             / (self.C / n)
@@ -211,7 +211,7 @@ class Statistics(_WaveletMeasure):
             scales=list(range(5)),
             orientations=config.orientations,
             minimum_kernel_coverage=config.minimum_kernel_coverage,
-            orientation_pool_fwhm_arcsec=config.orientation_pool_fwhm,
+            orientation_pool_FWHM_arcsec=config.orientation_pool_FWHM,
             pixel_scale=config.pixel_scale,
         )
         super().__init__(c, donor, resolve_device(config.device))
@@ -234,15 +234,15 @@ class Statistics(_WaveletMeasure):
             else torch.tensor(classes, dtype=torch.long, device=self.device)
         )
         self.quantiles = torch.linspace(0.01, 0.99, 199, device=self.device)
-        self.cdf_sigma = config.cdf_fwhm / config.pixel_scale / 2.354820045
-        self.cdf_cov = gaussian_filter(
+        self.CDF_sigma = config.CDF_FWHM / config.pixel_scale / 2.354820045
+        self.CDF_cov = gaussian_filter(
             torch.tensor(donor, dtype=torch.float64, device=self.device),
-            self.cdf_sigma,
+            self.CDF_sigma,
             mode="constant",
         ).float()
 
     def lowpass(self, x):
-        sig = self.cdf_sigma
+        sig = self.CDF_sigma
         r = int(np.ceil(4 * sig))
         t = torch.arange(-r, r + 1, dtype=x.dtype, device=x.device)
         k = torch.exp(-0.5 * (t / sig) ** 2)
@@ -250,14 +250,14 @@ class Statistics(_WaveletMeasure):
         z = F.conv2d(x[None, None], k[None, None, None, :], padding=(0, r))
         return F.conv2d(z, k[None, None, :, None], padding=(r, 0))[0, 0]
 
-    def cdf(self, x, masked=False):
+    def CDF(self, x, masked=False):
         sm = (
-            self.lowpass(x * self.known) / self.cdf_cov.clamp_min(0.05)
+            self.lowpass(x * self.known) / self.CDF_cov.clamp_min(0.05)
             if masked
             else self.lowpass(x)
         )
         valid = (
-            self.roi & self.known.bool() & (self.cdf_cov > 0.55) if masked else self.roi
+            self.roi & self.known.bool() & (self.CDF_cov > 0.55) if masked else self.roi
         )
         return torch.stack(
             [
@@ -290,7 +290,7 @@ class Statistics(_WaveletMeasure):
     def all(self, x, masked=False):
         return [
             *(self.approximate(x) if masked else self.full(x)),
-            self.cdf(x, masked),
+            self.CDF(x, masked),
             self.angular_energy(x, masked),
         ]
 

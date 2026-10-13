@@ -7,7 +7,8 @@ statistics inside hidden pixels. See docs/modeling.md for the source lineage.
 
 import hashlib
 import json
-from dataclasses import asdict, dataclass
+import logging
+from dataclasses import dataclass
 
 import numpy as np
 import torch
@@ -23,8 +24,8 @@ from .statistics import Statistics, independent_targets
 
 
 class NumpyOperators:
-    def __init__(self, psf, config):
-        self.psf = psf
+    def __init__(self, PSF, config):
+        self.PSF = PSF
         self.config = config
         self.device = operators.resolve_device(config.device)
 
@@ -52,12 +53,12 @@ class NumpyOperators:
     def power_field(self, shape, beta, seed, theta=0.0, coherence=0.4):
         return as_numpy(
             operators.power_field(
-                shape, beta, seed, self.psf, theta, coherence, device=self.device
+                shape, beta, seed, self.PSF, theta, coherence, device=self.device
             )
         )
 
-    def psf_transfer(self, shape):
-        return as_numpy(operators.psf_transfer(shape, self.psf, device=self.device))
+    def PSF_transfer(self, shape):
+        return as_numpy(operators.PSF_transfer(shape, self.PSF, device=self.device))
 
     def fft2(self, x):
         return as_numpy(torch.fft.fft2(self.tensor(x)))
@@ -74,14 +75,14 @@ class NumpyOperators:
         class Generator:
             def texture(self, seed, adapted=True):
                 return as_numpy(
-                    TextureGenerator(model, outer.psf, outer.config).texture(
+                    TextureGenerator(model, outer.PSF, outer.config).texture(
                         seed, adapted
                     )
                 )
 
             def field(self, seed):
                 return as_numpy(
-                    TextureGenerator(model, outer.psf, outer.config).field(seed)
+                    TextureGenerator(model, outer.PSF, outer.config).field(seed)
                 )
 
         return Generator()
@@ -126,8 +127,8 @@ def _bootstrap_targets(
     return (targets, uncertainty)
 
 
-def calibrate_spectrum(d, psf, config, crop):
-    ops = NumpyOperators(psf, config)
+def calibrate_spectrum(d, PSF, config, crop):
+    ops = NumpyOperators(PSF, config)
     smooth_observed = ops.smooth_observed
     draw_noise = ops.draw_noise
     power_field = ops.power_field
@@ -272,8 +273,8 @@ def calibrate_spectrum(d, psf, config, crop):
     return (values, report)
 
 
-def bootstrap_references(d, nd, psf, config):
-    ops = NumpyOperators(psf, config)
+def bootstrap_references(d, nd, PSF, config):
+    ops = NumpyOperators(PSF, config)
     smooth_observed = ops.smooth_observed
     gaussian_filter = ops.gaussian_filter
     draw_noise = ops.draw_noise
@@ -328,7 +329,7 @@ def bootstrap_references(d, nd, psf, config):
     hp = 1 - np.exp(
         -2
         * np.pi**2
-        * (config.texture_highpass_fwhm / config.pixel_scale / 2.35482) ** 2
+        * (config.texture_highpass_FWHM / config.pixel_scale / 2.35482) ** 2
         * rad**2
     )
     lo = np.floor(theta % np.pi / np.pi * 8).astype(int)
@@ -438,12 +439,12 @@ def bootstrap_references(d, nd, psf, config):
     )
 
 
-def refine_texture(d, noise, t, psf, config):
-    ops = NumpyOperators(psf, config)
+def refine_texture(d, noise, t, PSF, config):
+    ops = NumpyOperators(PSF, config)
     smooth_observed = ops.smooth_observed
     gaussian_filter = ops.gaussian_filter
     draw_noise = ops.draw_noise
-    psf_transfer = ops.psf_transfer
+    PSF_transfer = ops.PSF_transfer
     m = Statistics(d["donor"], d["roi"], t["classes"], config)
     n = d["observed"].shape[0]
     E = np.maximum(t["observed4"], 0)
@@ -462,7 +463,7 @@ def refine_texture(d, noise, t, psf, config):
     reliabilities = []
     responses = []
     centers = []
-    psf = np.abs(psf_transfer((n, n))) ** 2
+    PSF = np.abs(PSF_transfer((n, n))) ** 2
     for j in range(5):
         f = m.filters[j].detach().cpu().numpy()
         nn = f.shape[-1]
@@ -478,7 +479,7 @@ def refine_texture(d, noise, t, psf, config):
                 - np.exp(
                     -2
                     * np.pi**2
-                    * (config.texture_highpass_fwhm / config.pixel_scale / 2.35482) ** 2
+                    * (config.texture_highpass_FWHM / config.pixel_scale / 2.35482) ** 2
                     * r
                     * r
                 )
@@ -491,7 +492,7 @@ def refine_texture(d, noise, t, psf, config):
                 np.broadcast_to(abs(kx) * n, (nn, nn)),
             ]
         )
-        ps *= map_coordinates(psf, coords, order=1, mode="nearest")
+        ps *= map_coordinates(PSF, coords, order=1, mode="nearest")
         e0 = (abs(f) ** 2 * ps[None]).sum((1, 2))
         e1 = (abs(f) ** 2 * (ps * np.cos(2 * ph))[None]).sum((1, 2))
         q0 = (e0 * phase).sum() / e0.sum()
@@ -572,8 +573,8 @@ def refine_texture(d, noise, t, psf, config):
     return model
 
 
-def calibrate_targets(d, nd, model, classes, psf, config):
-    ops = NumpyOperators(psf, config)
+def calibrate_targets(d, nd, model, classes, PSF, config):
+    ops = NumpyOperators(PSF, config)
     tensor = ops.tensor
     m = Statistics(d["donor"], d["roi"], classes, config)
     full = []
@@ -690,7 +691,7 @@ def calibration_signature(field, config):
         field.normalized(config)["observed"],
         field.donor,
         field.roi,
-        field.psf,
+        field.PSF,
     ):
         a = np.ascontiguousarray(value)
         h.update(str((a.shape, a.dtype.str)).encode())
@@ -708,7 +709,22 @@ def calibration_signature(field, config):
         "validation_count",
         "noise_seeds",
     )
-    h.update(json.dumps({k: asdict(config)[k] for k in keys}, sort_keys=True).encode())
+    h.update(
+        json.dumps(
+            {
+                k: getattr(
+                    config,
+                    {
+                        "orientation_pool_fwhm": "orientation_pool_FWHM",
+                        "texture_highpass_fwhm": "texture_highpass_FWHM",
+                        "cdf_fwhm": "CDF_FWHM",
+                    }.get(k, k),
+                )
+                for k in keys
+            },
+            sort_keys=True,
+        ).encode()
+    )
     return h.hexdigest()
 
 
@@ -734,7 +750,7 @@ class StatisticalCalibration:
 def calibrate_statistics(
     field, config: ModelingConfig, *, progress=None
 ) -> StatisticalCalibration:
-    """Calibrate the spectral slope/noise and independent J=5 mask-transfer targets.
+    """Estimate noise and texture statistics from the retained observations.
 
     Calibration uses 16 reference fields and 8 held-out fields by default.
     Those fields calibrate the estimators; they are not optimized realizations.
@@ -742,21 +758,22 @@ def calibrate_statistics(
     """
 
     def report(stage):
+        logging.getLogger(__name__).info("Calibration: %s", stage)
         if progress is not None:
             progress(stage)
 
     d = field.normalized(config)
-    ops = NumpyOperators(field.psf, config)
+    ops = NumpyOperators(field.PSF, config)
     d["initial"], _ = ops.smooth_observed(d["observed"], d["donor"], 20)
     report("power spectrum and noise")
-    noise, noise_report = calibrate_spectrum(d, field.psf, config, field.crop)
+    noise, noise_report = calibrate_spectrum(d, field.PSF, config, field.crop)
     report("bootstrap angular reference")
-    bootstrap = bootstrap_references(d, noise, field.psf, config)
+    bootstrap = bootstrap_references(d, noise, field.PSF, config)
     report("five-band texture calibration")
-    texture = refine_texture(d, noise, bootstrap, field.psf, config)
+    texture = refine_texture(d, noise, bootstrap, field.PSF, config)
     report("independent mask-transfer calibration")
     targets, target_report = calibrate_targets(
-        d, noise, texture, bootstrap["classes"], field.psf, config
+        d, noise, texture, bootstrap["classes"], field.PSF, config
     )
     return StatisticalCalibration(
         noise,

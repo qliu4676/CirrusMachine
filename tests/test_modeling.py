@@ -124,7 +124,7 @@ def test_photometry_uniform_signal_and_missing_bins():
     image = np.full(radius.shape, 7.0)
     valid = np.ones(radius.shape, bool)
     valid[(radius >= 5) & (radius < 10)] = False
-    profile = measure_profile(image, valid, radius, [0, 5, 10, 20], sky=2, device="cpu")
+    profile = measure_profile(image, valid, radius, [0, 5, 10, 20], SB_ZP=25.13, sky=2, device="cpu")
     np.testing.assert_allclose(profile["intensity"][[0, 2]], 5)
     assert np.isnan(profile["intensity"][1])
     light = measure_cumulative_light(
@@ -155,8 +155,8 @@ def test_injection_truth_separate_and_normalization_recomputed():
     )
     result = prepare_injection(
         field,
-        [dict(n=1.0, re_arcsec=4.0, ie=1.0)],
-        psf_native=np.ones((1, 1)),
+        [dict(n=1.0, Re_arcsec=4.0, Ie=1.0)],
+        PSF_native=np.ones((1, 1)),
         oversample=1,
         margin_pixels=4,
         device="cpu",
@@ -281,9 +281,9 @@ def test_native_binning_masks_and_wcs():
         np.ones((1, 1)),
         center_xy=(100, 100),
         axis_ratio=0.6,
-        pa_deg=30,
+        PA_deg=30,
         canvas_size=128,
-        wcs=w,
+        WCS=w,
     )
     np.testing.assert_array_equal(
         f.image[f.crop], x[1:199, 1:199].reshape(66, 3, 66, 3).mean((1, 3))
@@ -291,7 +291,7 @@ def test_native_binning_masks_and_wcs():
     assert not f.source_clean[f.crop][0, 0]
     points = np.array([[0, 0], [30, 25], [65, 65]])
     original = w.all_pix2world(points * 3 + 2, 0)
-    transformed = f.wcs.all_pix2world(points + 31, 0)
+    transformed = f.WCS.all_pix2world(points + 31, 0)
     np.testing.assert_allclose(original, transformed, rtol=0, atol=1e-10)
 
 

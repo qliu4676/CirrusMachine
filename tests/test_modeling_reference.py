@@ -35,11 +35,11 @@ pytestmark = pytest.mark.skipif(
 @pytest.fixture
 def reference():
     case = Path(os.environ["CIRRUS_MODELING_CASE"])
-    config = ModelingConfig(device="cpu", beam_fwhm=18.0, steps=1, inner_refit=False)
+    config = ModelingConfig(device="cpu", beam_FWHM=18.0, steps=1, inner_refit=False)
     data = load_arrays(case / "cache/input.npz")
     science = load_arrays(case / "cache/science_input.npz")
     metadata = json.loads((case / "config/experiment.json").read_text())
-    psf = load_arrays(os.environ["CIRRUS_MODELING_PSF"])["psf_coarse"]
+    PSF = load_arrays(os.environ["CIRRUS_MODELING_PSF"])["psf_coarse"]
     mu, std = float(data["mu"]), float(data["std"])
     field = FieldData(
         mu + std * science["observed"].astype(float),
@@ -48,7 +48,7 @@ def reference():
         (slice(179, 845), slice(179, 845)),
         tuple(metadata["center_crop_xy"]),
         science["radius"],
-        psf,
+        PSF,
         normalization=(mu, std),
     )
     calibration = StatisticalCalibration(

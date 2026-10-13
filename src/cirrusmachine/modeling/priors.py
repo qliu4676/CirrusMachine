@@ -111,11 +111,11 @@ class BroadModel:
 class TextureGenerator:
     """Five calibrated frequency bands; independent, delivered-VIS fields."""
 
-    def __init__(self, model, psf, config):
+    def __init__(self, model, PSF, config):
         self.config = config
         self.device = resolve_device(config.device)
         self.d = {k: to_tensor(v, device=self.device) for k, v in model.items()}
-        self.psf = psf
+        self.PSF = PSF
         self.n = model["mean"].shape[0]
         fy = torch.fft.fftfreq(self.n, dtype=torch.float64, device=self.device)[:, None]
         fx = torch.fft.rfftfreq(self.n, dtype=torch.float64, device=self.device)[
@@ -131,7 +131,7 @@ class TextureGenerator:
         self.hp = 1 - torch.exp(
             -2
             * np.pi**2
-            * (config.texture_highpass_fwhm / config.pixel_scale / 2.35482) ** 2
+            * (config.texture_highpass_FWHM / config.pixel_scale / 2.35482) ** 2
             * rad**2
         )
 
@@ -140,7 +140,7 @@ class TextureGenerator:
             (self.n, self.n),
             float(self.d["beta"]),
             seed,
-            self.psf,
+            self.PSF,
             coherence=0,
             device=self.device,
         )
@@ -201,7 +201,7 @@ def build_cirrus_prior(
     Cholesky factor. Its beam must match config; stale 18 arcsec products are
     rejected for a 36 arcsec run. No injected truth is used.
     """
-    expected = config.beam_fwhm / config.pixel_scale / 2.354820045
+    expected = config.beam_FWHM / config.pixel_scale / 2.354820045
     if not np.isclose(float(beam["sigma"]), expected, rtol=1e-7):
         raise ValueError(
             "Beam mismatch: recalibrate FIR targets/covariance at the requested resolution"
@@ -240,7 +240,7 @@ def build_cirrus_prior(
     return CirrusPrior(
         model,
         model.mean(),
-        TextureGenerator(calibration.texture, field.psf, config),
+        TextureGenerator(calibration.texture, field.PSF, config),
         amp,
         beam,
         calibration,

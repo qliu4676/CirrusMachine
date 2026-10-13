@@ -46,17 +46,29 @@ def _inputs(image, valid, radius, device):
     return x, r, mask & torch.isfinite(x) & torch.isfinite(r)
 
 
-def measure_profile(
-    image, valid, radius, edges, *, sky=0.0, zeropoint=25.13, device="auto"
-):
+def surface_brightness_zeropoint(ZP, intensity_pixel_scale):
+    """Convert a flux ZP to mag/arcsec² for the image's intensity units.
+
+    Use the pixel scale in arcsec associated with the supplied flux ZP.
+    Mean binning retains this intensity scale, even when the WCS grid changes;
+    sum binning requires the summed-pixel scale instead.
+    """
+    if not np.isfinite([ZP, intensity_pixel_scale]).all() or intensity_pixel_scale <= 0:
+        raise ValueError("ZP must be finite and intensity pixel scale positive")
+    return float(ZP + 5 * np.log10(intensity_pixel_scale))
+
+
+def measure_profile(image, valid, radius, edges, *, SB_ZP, sky=0.0, device="auto"):
     """Measure clipped annular intensity (ADU) and surface brightness (mag/arcsec²).
 
     Radius and edges are semimajor radii in arcsec. Each annulus uses the
     reference's 3-sigma median/MAD clipping, at most five passes. Bins with fewer
     than four pixels are undefined. Nonpositive intensities have NaN magnitude.
-    ``zeropoint`` converts the supplied intensity convention to surface
-    brightness; 25.13 is the provisional mean-binned VIS calibration.
+    ``SB_ZP`` is the explicit surface-brightness zeropoint for the input
+    intensity units; use ``surface_brightness_zeropoint`` to derive it.
     """
+    if not np.isfinite(SB_ZP):
+        raise ValueError("SB_ZP must be finite")
     x, r, mask = _inputs(image, valid, radius, device)
     e = to_tensor(edges, dtype=x.dtype, device=x.device)
     if (
@@ -88,12 +100,12 @@ def measure_profile(
         means.append(values.mean() - sky)
         retained.append(values.numel())
     mean = torch.stack(means)
-    sb = torch.where(mean > 0, zeropoint - 2.5 * torch.log10(mean), torch.nan)
+    SB = torch.where(mean > 0, SB_ZP - 2.5 * torch.log10(mean), torch.nan)
     return dict(
         radius=as_numpy((e[:-1] + e[1:]) / 2),
         edges=as_numpy(e),
         intensity=as_numpy(mean),
-        surface_brightness=as_numpy(sb),
+        surface_brightness=as_numpy(SB),
         count=np.array(counts),
         retained_count=np.array(retained),
     )

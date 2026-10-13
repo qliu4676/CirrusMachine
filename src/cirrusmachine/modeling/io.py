@@ -82,8 +82,8 @@ def save_modeling_results(results, directory, config, *, field=None):
         output.mkdir()
         header = (
             fits.Header()
-            if field is None or field.wcs is None
-            else field.wcs.slice(field.crop).to_header()
+            if field is None or field.WCS is None
+            else field.WCS.slice(field.crop).to_header()
         )
         header["BUNIT"] = "ADU"
         header["SKYADU"] = result.sky

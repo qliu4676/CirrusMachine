@@ -4,22 +4,22 @@
 # Main settings: check these against the input data and science region.
 device: auto  # CUDA when available, otherwise CPU.
 pixel_scale: 0.9
-beam_fwhm: 36.0  # Effective resolution of the supplied FIR map.
+beam_FWHM: 36.0  # Effective resolution of the supplied FIR map.
 beta_grid: [1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5]  # Calibrate P(k) proportional to k^-beta.
 core_radius: 32.0
 core_taper: 5.0
 sky_annulus: [180.0, 220.0]
 inner_refit: true
 
-# Fixed implementation: J=5, L=8.
+# Wavelet settings supported by this implementation.
 scales: 5
 orientations: 8
 
 # Advanced statistics and prior controls: usually retain these defaults.
 minimum_kernel_coverage: 0.55
-orientation_pool_fwhm: 54.6
-texture_highpass_fwhm: 40.249
-cdf_fwhm: 40.24922359499622
+orientation_pool_FWHM: 54.6
+texture_highpass_FWHM: 40.249
+CDF_FWHM: 40.24922359499622
 split_sigma_pixels: 12.0
 broad_length_pixels: 60.0
 prior_lowpass_pixels: 30.0
