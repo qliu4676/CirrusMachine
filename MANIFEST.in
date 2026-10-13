@@ -1,0 +1,2 @@
+prune src/cirrusmachine/legacy
+prune tests/legacy

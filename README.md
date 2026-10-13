@@ -1,89 +1,82 @@
 # CirrusMachine
 
-Generate independent mock Galactic cirrus images for low-surface-brightness
-astronomy, using wavelet scattering statistics, power spectra, phase coupling,
-and local amplitude constraints. Coarse Planck or Herschel maps can condition
-the large-scale structure. Foreground removal is a longer-term research goal.
+Galactic cirrus synthesis and FIR-conditioned cirrus/halo modeling for
+low-surface-brightness imaging. The modeling workflow uses J=5, L=8 wavelet
+scattering statistics and calibrates the power-spectrum slope from the data.
+The Cheng `scattering` backend is bundled; do not install it separately.
 
-## Install and check locally
+## Install
 
-Python 3.10+ is required. Run from this repository:
-
-```bash
-python -m venv .venv
-source .venv/bin/activate
-python -m pip install -e ".[dev]"
-python -m pytest -q
-python -m cirrusmachine --output result/smoke.fits
-```
-
-The smoke command runs five CPU optimization steps on a small synthetic input
-and saves only a FITS image. It tests installation and synthesis, not scientific
-convergence. Output files are never overwritten by this command.
-For a quick check using an available Dragonfly image:
+Python 3.10+; run from the repository checkout:
 
 ```bash
-python -m cirrusmachine \
-  --input product/data/dfuws/UWtile_04703_luminance_filtered_kJy_sr.fits \
-  --output result/dragonfly_smoke.fits
+python -m pip install -e .              # Package and runtime dependencies
+python -m pip install -e ".[tests]"    # Also install pytest (optional)
+python -m pytest -q                    # Run the package tests
 ```
 
-The command block-averages the input to 32 x 32 pixels; do not use that smoke
-output to assess full-resolution morphology. The Python API also supports
-explicit CPU operation:
+Test dependencies are optional. Tests live in the checkout and are not installed
+in the wheel. Data-dependent reference tests skip when their inputs are absent.
+Use `.[notebooks]` for Jupyter. Install a CUDA-enabled PyTorch build for GPU use;
+modeling with `device="auto"` selects CUDA when available and CPU otherwise.
+WST, optimization, covariance operations and photometry use PyTorch; WCS and
+halo geometry use CPU routines. MPS is not supported.
+
+## Cirrus and halo modeling
+
+Supply an optical image, exclusion masks, a unit-sum PSF on the working grid,
+and native FIR image/error/coverage/mask arrays with their WCS. Optical values
+are ADU per delivered pixel; FIR values and 1-sigma errors are MJy/sr. Masks
+passed below are `True` for excluded pixels. Inputs are not bundled.
+
+```python
+from cirrusmachine import modeling as cm
+
+config = cm.load_config("configs/cutout_ddV.yaml")  # Or cm.ModelingConfig()
+field = cm.prepare_field_data(
+    optical, source_mask, target_mask, psf_working,
+    center_xy=center_native, axis_ratio=0.6, pa_deg=30,
+    native_pixel_scale=0.3, bin_factor=3, canvas_size=1024,
+    exclusion_radius=150, wcs=optical_wcs,
+)
+statistics = cm.calibrate_statistics(field, config, progress=print)
+beam = cm.prepare_fir_constraint(
+    field, fir_image, fir_error, fir_coverage, fir_mask, fir_wcs, config,
+    effective_fwhm=36.0,
+)
+prior = cm.build_cirrus_prior(field, beam, statistics, config)
+initial = cm.initialize_cirrus(prior, config)
+results = cm.run_cirrus_halo_modeling(
+    field, prior, initial, config, progress=print,
+)
+corrected = results[0].corrected
+cm.save_modeling_results(results, "results/cutout_ddV", config, field=field)
+```
+
+The supplied FIR map must already have the stated 36 arcsec effective resolution.
+The config defaults to one realization using the existing representative seed
+pair; add `draws` entries for more. All config keys may be omitted to use defaults.
+`prepare_injection` supports synthetic-galaxy inputs; `measure_profile` and
+`measure_cumulative_light` provide simple photometry. The example notebook is
+planned for stage 2.
+
+## Basic synthesis
 
 ```python
 from cirrusmachine import MockSynthesisConfig, synthesize_single_image
 
-# image is a finite, nonconstant 2D NumPy array.
+# image: finite, nonconstant 2D NumPy array.
 mock = synthesize_single_image(
-    image,
-    config=MockSynthesisConfig(device="cpu", seed=4703, steps=100),
+    image, config=MockSynthesisConfig(device="cpu", seed=4703, steps=100),
 )["image_out"]
 ```
 
-`requirements.txt` installs the same core dependencies as `setup.py`.
-Optional extras: `.[notebooks]` for Jupyter; `.[astronomy]` for HEALPix input,
-TurbuStat controls and mask filling. The original workflow-specific requirement
-lists are retained for reference. The preserved Cheng scattering backend is
-bundled under `src/scattering`; it is installed with this package, with its
-upstream README retained. Do not install an unrelated package named scattering.
+For a small CPU installation check: `python -m cirrusmachine --output smoke.fits`.
+This runs five optimization steps, not a converged science model.
 
-## Layout and data
-
-- `src/cirrusmachine/`: reusable synthesis, calibration and neural-field code.
-- `scripts/` and `configs/`: research workflows and CPU-default configurations.
-- `tests/`: regression tests.
-- `notebooks/`: four principal historical Colab notebooks, temporarily ignored.
-- `product/`: untracked input FITS, prepared maps, target caches and intermediates.
-- `result/`: untracked generated results and figures.
-
-Science inputs are not included in Git. The migrated local data live under
-`product/data/{dfuws,A2390,Perseus}`; cached preflights live under
-`product/dfuws` and `product/A2390_pipeline`. A2390 prepared Herschel inputs
-are also under `product/A2390_pipeline`. The old Drive results and training
-checkpoints remain in the original project archive; they are not all duplicated.
-Caches hash arrays and configuration, sometimes including absolute paths, so
-moving a dataset can legitimately trigger recomputation. Historical cached
-metadata retains its original paths and units.
-
-Run `python scripts/<script>.py --help` for individual workflow options.
-Some legacy scripts automatically write text/JSON experiment reports: use those
-report-producing runs only when explicitly requested. Do not save additional
-text/Markdown audit reports or records unless explicitly requested.
-
-## Colab after local validation
-
-First check CPU tests and small local runs, then validate the intended full
-science configuration. Only after those checks should a GPU run be started.
-Clone/sync this repository to Colab, make the ignored inputs available separately,
-then install that checkout with `python -m pip install -e .`. The compatibility
-setup scripts install this checkout without fetching or switching backend branches.
-For CUDA-enabled workflows, explicitly set the configuration's runtime device to
-`cuda` (or `gpu` for the notebook synthesis API). Some current conditioned-WST
-scripts still explicitly use CPU and need a separate GPU-portability check.
-
-The copied notebooks preserve their original cells and Colab paths; update their
-mount/project paths before reuse. Git will sync source and configurations, not
-ignored inputs, caches, results or notebooks. No Git remote is configured in this
-local checkout yet.
+Current code is in `src/cirrusmachine/modeling` and `synthesis.py`, with the
+bundled backend in `src/scattering`. Historical variants and their local callers
+use `cirrusmachine.legacy`; that subpackage is ignored by Git and excluded from
+package builds. Local legacy tests are under `tests/legacy` and run only when
+explicitly selected. Scientific inputs, generated outputs and notebooks remain
+untracked.

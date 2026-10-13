@@ -107,8 +107,8 @@ def _resolve_scattering(scattering_module: Any = None) -> Any:
         import scattering  # type: ignore
     except ImportError as exc:
         raise ImportError(
-            "Could not import the bundled scattering package. In notebooks, run "
-            "setup_scattering_colab.py or add scattering_transform to sys.path first."
+            "Could not import the bundled scattering package. "
+            "Install CirrusMachine with python -m pip install -e . from its checkout."
         ) from exc
     return scattering
 

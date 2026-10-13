@@ -1,9 +1,4 @@
-"""Reusable helpers for the CirrusMachine research workflow.
-
-CirrusMachine is currently notebook-first.  This package is a gradual landing
-place for utility code extracted from the Colab notebooks without changing the
-scientific behavior of the included Cheng et al. scattering package.
-"""
+"""Galactic cirrus synthesis and FIR-conditioned cirrus/halo modeling."""
 
 from .synthesis import (
     MockSynthesisConfig,

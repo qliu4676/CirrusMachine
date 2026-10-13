@@ -192,3 +192,17 @@ cython_debug/
 /tests/
 /scripts/
 /configs/
+
+# Include the reusable modeling regression tests and reviewed configuration.
+!/tests/
+/tests/*
+!/tests/test_modeling*.py
+!/configs/
+/configs/*
+!/configs/cutout_ddV.yaml
+# Keep local Markdown notes out of commits; README files remain eligible.
+*.[mM][dD]
+![Rr][Ee][Aa][Dd][Mm][Ee].[mM][dD]
+
+# Historical implementations are retained only for local research workflows.
+/src/cirrusmachine/legacy/
