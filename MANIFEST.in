@@ -1,5 +1,7 @@
 prune src/cirrusmachine/legacy
 prune tests/legacy
-include notebooks/cutout_ddV_modeling.ipynb
-include notebooks/cutout_ddV_helpers.py
+include notebooks/cutout_example_modeling.ipynb
+include notebooks/example_helpers.py
 include configs/cutout_ddV.yaml
+recursive-include external/scattering_transform/scattering *.py
+include external/scattering_transform/README.md

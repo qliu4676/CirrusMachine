@@ -171,7 +171,7 @@ def show_image(image, *, ax=None, valid=None, title=None, limits=None, cmap="gra
     if valid is not None:
         shown = np.where(valid, shown, np.nan)
     if limits is None:
-        limits = np.nanpercentile(shown, [2, 98])
+        limits = np.nanpercentile(shown, [2, 99])
     cmap = plt.get_cmap(cmap).copy()
     cmap.set_bad("0.75")
     artist = ax.imshow(shown, origin="lower", cmap=cmap, vmin=limits[0], vmax=limits[1])

@@ -104,11 +104,11 @@ def _resolve_scattering(scattering_module: Any = None) -> Any:
     if scattering_module is not None:
         return scattering_module
     try:
-        import scattering  # type: ignore
+        from . import _scattering_synthesis as scattering
     except ImportError as exc:
         raise ImportError(
-            "Could not import the bundled scattering package. "
-            "Install CirrusMachine with python -m pip install -e . from its checkout."
+            "Could not import the scattering source dependency. "
+            "Run git submodule update --init external/scattering_transform, then install CirrusMachine."
         ) from exc
     return scattering
 

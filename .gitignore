@@ -210,5 +210,5 @@ cython_debug/
 # Share the current example; keep historical notebooks local.
 !/notebooks/
 /notebooks/*
-!/notebooks/cutout_ddV_modeling.ipynb
-!/notebooks/cutout_ddV_helpers.py
+!/notebooks/cutout_example_modeling.ipynb
+!/notebooks/example_helpers.py

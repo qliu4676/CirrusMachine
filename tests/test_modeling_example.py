@@ -9,7 +9,7 @@ from astropy.io import fits
 from astropy.wcs import WCS
 
 spec = importlib.util.spec_from_file_location(
-    "cutout_example", Path(__file__).parents[1] / "notebooks/cutout_ddV_helpers.py"
+    "cutout_example", Path(__file__).parents[1] / "notebooks/example_helpers.py"
 )
 example = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(example)
