@@ -15,7 +15,7 @@ python -m pip install -e ".[examples]"
 ```
 
 CirrusMachine uses [Cheng's scattering package](https://github.com/SihaoCheng/scattering_transform).
-The [`cirrusmachine._scattering_synthesis` adapter](src/cirrusmachine/_scattering_synthesis.py)
+The [`cirrusmachine._scattering_synthesis`](src/cirrusmachine/_scattering_synthesis.py) adapter
 retains the local image-increment optimization separately.
 Install a CUDA-enabled PyTorch build for GPU use. `device="auto"` selects CUDA
 when available and otherwise CPU; MPS is unsupported.
