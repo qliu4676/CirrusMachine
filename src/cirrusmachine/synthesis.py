@@ -1,34 +1,7 @@
-"""Notebook-compatible mock cirrus synthesis helpers.
+"""Mock cirrus synthesis with reflect padding and scattering statistics.
 
-The current notebooks follow a repeated recipe:
-
-1. Load a 2D cirrus image.
-2. Optionally bin it with ``astropy.nddata.block_reduce`` in the notebook.
-3. Crop to even dimensions.
-4. Add an image axis so the array has shape ``(N_image, M, N)``.
-5. Reflect-pad by ``M//2`` and ``N//2`` to soften boundary artifacts.
-6. Call ``scattering.synthesis`` with the padded image.
-7. Crop the synthesized image back to the original footprint.
-
-This module preserves that behavior.  It does not change the bundled
-``scattering`` loss definitions or coefficient selection.
-
-Notebook example
-----------------
-```python
-from astropy.io import fits
-from astropy.nddata import block_reduce
-from cirrusmachine.synthesis import MockSynthesisConfig, synthesize_single_image
-
-raw = fits.getdata("/content/sample_data/WISE_cutout_MJy_ps_rm_lpf_6arcsec.fits")
-image = block_reduce(raw, 4, func=np.mean)
-result = synthesize_single_image(
-    image,
-    config=MockSynthesisConfig(J=None, L=4, seed=6946, device="gpu"),
-    scattering_module=scattering,
-)
-image_out = result["image_out"]
-```
+Images are cropped to even dimensions, reflect-padded to soften boundaries,
+optimized through the synthesis adapter, and cropped to their original footprint.
 """
 
 from __future__ import annotations
@@ -42,7 +15,7 @@ import numpy as np
 
 @dataclass(frozen=True)
 class MockSynthesisConfig:
-    """Configuration matching the current notebook synthesis calls."""
+    """Configuration for scattering-constrained image synthesis."""
 
     estimator_name: str = "s_cov"
     J: Optional[int] = None
@@ -57,7 +30,7 @@ class MockSynthesisConfig:
 
 
 def dyadic_size(shape: Sequence[int]) -> int:
-    """Return the largest dyadic scale used by the notebooks."""
+    """Return the dyadic scale count for the smaller image dimension."""
 
     return int(np.ceil(np.log2(min(shape)) - 1))
 
@@ -71,7 +44,7 @@ def crop_to_even(image: np.ndarray) -> np.ndarray:
 
 
 def ensure_image_stack(image: np.ndarray) -> np.ndarray:
-    """Return an array with notebook-compatible shape ``(N_image, M, N)``."""
+    """Return an array with shape ``(N_image, M, N)``."""
 
     arr = np.asarray(image)
     if arr.ndim == 2:
@@ -103,13 +76,8 @@ def crop_reflect_padding(image_stack: np.ndarray, pad: tuple[int, int]) -> np.nd
 def _resolve_scattering(scattering_module: Any = None) -> Any:
     if scattering_module is not None:
         return scattering_module
-    try:
-        from . import _scattering_synthesis as scattering
-    except ImportError as exc:
-        raise ImportError(
-            "Could not import the scattering source dependency. "
-            "Run git submodule update --init external/scattering_transform, then install CirrusMachine."
-        ) from exc
+    from . import _scattering_synthesis as scattering
+
     return scattering
 
 
@@ -120,10 +88,9 @@ def synthesize_padded_mock(
     scattering_module: Any = None,
     **synthesis_kwargs: Any,
 ) -> np.ndarray:
-    """Call ``scattering.synthesis`` on an already padded image stack.
+    """Run synthesis on an already padded image stack.
 
-    This mirrors notebook cells that directly pass ``image_padded`` to
-    ``scattering.synthesis``.  Extra keyword arguments are forwarded unchanged.
+    Extra keyword arguments are forwarded to the synthesis adapter.
     """
 
     cfg = config or MockSynthesisConfig()
@@ -153,7 +120,7 @@ def synthesize_from_estimator(
     scattering_module: Any = None,
     **synthesis_kwargs: Any,
 ) -> np.ndarray:
-    """Run the estimator-mode recipe used by Bullseye and ICL notebooks."""
+    """Synthesize an image from target scattering coefficients."""
 
     cfg = config or MockSynthesisConfig()
     scattering = _resolve_scattering(scattering_module)
@@ -183,7 +150,7 @@ def synthesize_single_image(
     scattering_module: Any = None,
     **synthesis_kwargs: Any,
 ) -> Dict[str, np.ndarray | tuple[int, int] | int]:
-    """Run the current single-image notebook recipe end to end."""
+    """Pad, synthesize, and crop a single image."""
 
     cfg = config or MockSynthesisConfig()
     image_stack = ensure_image_stack(crop_to_even(image))
@@ -216,7 +183,7 @@ def synthesize_batch(
     scattering_module: Any = None,
     **synthesis_kwargs: Any,
 ) -> np.ndarray:
-    """Generate a batch by looping over seeds, matching WISE/HeLMS notebooks."""
+    """Generate a batch of realizations using the supplied seeds."""
 
     cfg = config or MockSynthesisConfig()
     m, n = output_shape

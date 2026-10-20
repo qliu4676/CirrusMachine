@@ -34,7 +34,7 @@ def limit_threads():
 
 
 def test_config_roundtrip_and_validation(tmp_path):
-    config = ModelingConfig()
+    config = ModelingConfig(device="cpu")
     save_config(config, tmp_path / "config.yaml")
     assert load_config(tmp_path / "config.yaml") == config
     assert config.draws == (DrawSeeds(2711003, 2721003),)
@@ -155,7 +155,8 @@ def test_injection_truth_separate_and_normalization_recomputed():
     )
     result = prepare_injection(
         field,
-        [dict(n=1.0, Re_arcsec=4.0, Ie=1.0)],
+        [dict(n=1.0, Re_arcsec=4.0, Ie=25.0)],
+        SB_ZP=25.0,
         PSF_native=np.ones((1, 1)),
         oversample=1,
         margin_pixels=4,
@@ -309,7 +310,7 @@ def test_fits_byte_order_and_reversed_inputs():
 
 def test_sky_matches_observed_halo_estimator():
     from cirrusmachine.modeling import estimate_sky
-    from cirrusmachine.modeling.halo import sky_estimate
+    from cirrusmachine.modeling.diffuse import sky_estimate
 
     y, x = np.indices((64, 64))
     radius = np.hypot(x - 32, y - 32)

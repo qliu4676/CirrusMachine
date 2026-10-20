@@ -1,15 +1,22 @@
-"""Numerical settings for cirrus and halo modeling."""
+"""Numerical settings for cirrus and diffuse light modeling."""
 
+import logging
 import math
-from dataclasses import asdict, dataclass, field, fields
+import os
+from dataclasses import asdict, dataclass, field, fields, replace
 from pathlib import Path
 
+import torch
 import yaml
+
+from .operators import resolve_device
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
 class DrawSeeds:
-    """Independent broad-field and texture phases (NumPy PCG64 seeds)."""
+    """Independent broad-field and texture phases."""
 
     broad: int = 2711003
     texture: int = 2721003
@@ -21,8 +28,8 @@ class ModelingConfig:
 
     ``auto`` selects CUDA when available, otherwise CPU. The covariance solves
     require float64 and complex FFTs, so MPS is not a supported backend.
-    The 36 arcsec beam describes the supplied FIR data's effective resolution;
-    it does not request convolution of an arbitrary input FIR map.
+    ``stage_steps`` gives the duration of each learning rate. Shorter runs
+    stop within the schedule; longer runs retain its final learning rate.
     """
 
     device: str = "auto"
@@ -31,18 +38,18 @@ class ModelingConfig:
     scales: int = 5
     orientations: int = 8
     minimum_kernel_coverage: float = 0.55
-    orientation_pool_FWHM: float = 54.6
-    texture_highpass_FWHM: float = 40.249
-    CDF_FWHM: float = 40.24922359499622
+    orientation_pool_FWHM: float = 55
+    texture_highpass_FWHM: float = 40
+    CDF_FWHM: float = 40
     beta_grid: tuple[float, ...] = (1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5)
     split_sigma_pixels: float = 12.0
     broad_length_pixels: float = 60.0
     prior_lowpass_pixels: float = 30.0
     prior_weight: float = 5.0
     weights: tuple[float, ...] = (1.0, 0.1, 1.0, 1.0, 0.01, 2.0)
-    steps: int = 150
+    steps: int = 100
     learning_rates: tuple[float, ...] = (0.005, 0.003, 0.001)
-    stage_steps: int = 50
+    stage_steps: tuple[int, ...] = (40, 30, 30)
     halo_refresh_steps: int = 10
     target_refresh_steps: int = 25
     halo_damping: float = 0.5
@@ -77,7 +84,6 @@ class ModelingConfig:
                 raise ValueError(f"{name} must be finite and positive")
         for name in (
             "steps",
-            "stage_steps",
             "halo_refresh_steps",
             "target_refresh_steps",
         ):
@@ -91,6 +97,17 @@ class ModelingConfig:
             not math.isfinite(v) or v <= 0 for v in self.learning_rates
         ):
             raise ValueError("learning_rates must be positive")
+        if (
+            not isinstance(self.stage_steps, (tuple, list))
+            or len(self.stage_steps) != len(self.learning_rates)
+            or any(
+                isinstance(v, bool) or not isinstance(v, int) or v <= 0
+                for v in self.stage_steps
+            )
+        ):
+            raise ValueError(
+                "stage_steps must list one positive integer duration per learning rate"
+            )
         if not self.beta_grid or any(
             not math.isfinite(v) or v <= 0 for v in self.beta_grid
         ):
@@ -123,8 +140,18 @@ class ModelingConfig:
                 raise ValueError("draws must contain nonnegative DrawSeeds")
 
 
-def load_config(path: str | Path) -> ModelingConfig:
-    """Read a modeling YAML file, rejecting unknown numerical settings."""
+def load_config(path: str | Path, *, cpu_threads=None) -> ModelingConfig:
+    """Read YAML and resolve ``auto`` to the available computation device.
+
+    Unknown settings are rejected. ``cpu_threads`` optionally caps PyTorch CPU
+    threads for this process; omitting it preserves the existing thread count.
+    """
+    if cpu_threads is not None and (
+        isinstance(cpu_threads, bool)
+        or not isinstance(cpu_threads, int)
+        or cpu_threads < 1
+    ):
+        raise ValueError("cpu_threads must be a positive integer or None")
     raw = yaml.safe_load(Path(path).read_text())
     if not isinstance(raw, dict):
         raise ValueError("Configuration must be a mapping")
@@ -144,11 +171,26 @@ def load_config(path: str | Path) -> ModelingConfig:
     for key in ("beta_grid", "weights", "learning_rates", "sky_annulus", "noise_seeds"):
         if key in raw:
             raw[key] = tuple(raw[key])
+    if isinstance(raw.get("stage_steps"), list):
+        raw["stage_steps"] = tuple(raw["stage_steps"])
     if "draws" in raw:
         raw["draws"] = tuple(DrawSeeds(**v) for v in raw["draws"])
     if "allowance_seeds" in raw:
         raw["allowance_seeds"] = DrawSeeds(**raw["allowance_seeds"])
-    return ModelingConfig(**raw)
+    config = ModelingConfig(**raw)
+    device = resolve_device(config.device)
+    config = replace(config, device=str(device))
+    if device.type == "cpu" and cpu_threads is not None:
+        torch.set_num_threads(
+            min(cpu_threads, os.cpu_count() or 1, torch.get_num_threads())
+        )
+    logger.info(
+        "Device: %s%s",
+        config.device,
+        f" ({torch.cuda.get_device_name(device)})" if device.type == "cuda" else "",
+    )
+    logger.info("Run: %d realization(s), %d steps", len(config.draws), config.steps)
+    return config
 
 
 class _ConfigDumper(yaml.SafeDumper):

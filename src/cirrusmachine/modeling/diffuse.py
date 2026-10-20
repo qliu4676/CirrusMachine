@@ -1,8 +1,8 @@
-"""Observed-only annulus-relative halo with nonnegative intensity and smooth shape.
+"""Observed-only annulus-relative diffuse model with nonnegative intensity and smooth shape.
 
 Source holes are excluded from every sample. Output over a hole is interpolation,
 never an observation. No injected brightness, profile index or effective radius
-is used to estimate the halo. Photutils models the delivered PSF-convolved image.
+is used to estimate the diffuse model. Photutils models the delivered PSF-convolved image.
 """
 
 import time
@@ -140,7 +140,7 @@ def smooth_shape(iso, previous=None, pixel_scale=0.9):
     if not good:
         if previous is None:
             raise RuntimeError(
-                "No reliable geometry; no previous observed halo to retain"
+                "No reliable geometry; no previous observed diffuse model to retain"
             )
         return (
             {
@@ -198,7 +198,7 @@ def smooth_shape(iso, previous=None, pixel_scale=0.9):
         if nested(info, 1000.0):
             break
     if not nested(info, 1000.0):
-        raise RuntimeError("Halo isophotes are not nested")
+        raise RuntimeError("Diffuse isophotes are not nested")
     return (info, len(good))
 
 
@@ -219,7 +219,7 @@ def elliptical_coordinates(shape, center, info, pixel_scale=0.9):
     return (lo + hi) / 2
 
 
-def fit_halo(
+def fit_diffuse(
     residual,
     valid,
     center,
@@ -229,6 +229,11 @@ def fit_halo(
     *,
     pixel_scale=0.9,
 ):
+    """Estimate smooth, nonnegative diffuse light and sky from retained pixels.
+
+    The profile is relative to the supplied sky annulus. Elliptical isophotes
+    describe the delivered image; no intrinsic profile or injected truth is used.
+    """
     started = time.monotonic()
     sky = sky_estimate(residual, valid, measurement_radius, annulus)
     image = np.ma.array(residual - sky["value_ADU"], mask=~valid)
@@ -362,11 +367,11 @@ def fit_halo(
         source_holes_excluded=True,
         source_clean_central20_pixels=int(np.sum(valid & (measurement_radius < 20))),
         model_outer_support_arcsec=float(annulus[1]),
-        outer_boundary="annulus-relative halo tapers to zero at adopted annulus outer edge; not intrinsic total luminosity",
+        outer_boundary="annulus-relative diffuse model tapers to zero at adopted annulus outer edge; not intrinsic total luminosity",
         runtime_seconds=time.monotonic() - started,
     )
     if not np.isfinite(model).all() or model.min() < 0:
-        raise RuntimeError("Invalid nonnegative halo model")
+        raise RuntimeError("Invalid nonnegative diffuse model model")
     return (model.astype("f4"), info)
 
 
@@ -384,7 +389,8 @@ def radii(dx, dy, info):
     return (lo + hi) * 0.5
 
 
-def refit_inner_halo(residual, original, clean, center, info, cov, config):
+def refit_inner_diffuse(residual, original, clean, center, info, cov, config):
+    """Refine the central diffuse profile with pixel integration and covariance."""
     boundary = config.core_radius + 0.5
     pixel = config.pixel_scale
     half = int(np.ceil(boundary / pixel)) + 2
@@ -394,7 +400,7 @@ def refit_inner_halo(residual, original, clean, center, info, cov, config):
     ylo = int(cy) - half
     yhi = int(cy) + half + 2
     if xlo < 0 or ylo < 0 or xhi > original.shape[1] or (yhi > original.shape[0]):
-        raise ValueError("Inner halo aperture leaves the crop")
+        raise ValueError("Inner diffuse model aperture leaves the crop")
     ys, xs = np.mgrid[ylo:yhi, xlo:xhi]
     dx = pixel * (xs - cx)
     dy = pixel * (ys - cy)
@@ -426,7 +432,7 @@ def refit_inner_halo(residual, original, clean, center, info, cov, config):
     fixed[-1] = bv
     fixed[-2] = bv - (boundary - breaks[-2]) * bd / 3
     if np.min(fixed) < 0:
-        raise RuntimeError("Inner halo boundary coefficients are negative")
+        raise RuntimeError("Inner diffuse model boundary coefficients are negative")
     transform = np.zeros((nc, nf))
     transform[0, 0] = transform[1, 0] = 1
     for j in range(2, nc - 2):
@@ -479,7 +485,7 @@ def refit_inner_halo(residual, original, clean, center, info, cov, config):
         g = X.T @ ciy
         scale = np.sqrt(np.diag(G))
         if not (scale > 0).all():
-            raise RuntimeError("Unidentifiable inner halo amplitudes")
+            raise RuntimeError("Unidentifiable inner diffuse model amplitudes")
         Gn = G / scale[:, None] / scale[None, :]
         gn = g / scale
         eig = np.linalg.eigvalsh(Gn)
@@ -494,7 +500,9 @@ def refit_inner_halo(residual, original, clean, center, info, cov, config):
             float(np.max(np.maximum(-grad[u <= 1e-10], 0), initial=0)),
         ) / max(float(np.max(np.abs(gn))), 1.0)
         if kkt >= 1e-8:
-            raise RuntimeError(f"Inner halo NNLS optimality check failed: {kkt}")
+            raise RuntimeError(
+                f"Inner diffuse model NNLS optimality check failed: {kkt}"
+            )
         prediction = offset + A @ amps
         err = (observed - prediction)[valid]
         chi = float(err @ solve_vector(err))
@@ -529,12 +537,12 @@ def refit_inner_halo(residual, original, clean, center, info, cov, config):
     else:
         raise RuntimeError("Pixel quadrature did not reach required precision")
     if solver["kkt"] >= 1e-8 or max(v["relative_residual"] for v in cg) >= 2e-6:
-        raise RuntimeError("Inner halo solve failed numerical validation")
+        raise RuntimeError("Inner diffuse model solve failed numerical validation")
     output = original.copy()
     patch = output[ylo:yhi, xlo:xhi]
     patch[inner] = pred[inner]
     if not np.isfinite(output).all() or output.min() < 0:
-        raise RuntimeError("Invalid inner halo")
+        raise RuntimeError("Invalid inner diffuse model")
     return (
         output,
         dict(

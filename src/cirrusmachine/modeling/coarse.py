@@ -1,4 +1,6 @@
-"""FIR native-sample calibration with empirical discrepancy covariance."""
+"""Coarse native-sample calibration with empirical discrepancy covariance."""
+
+import logging
 
 import numpy as np
 import torch
@@ -8,14 +10,16 @@ from scipy.optimize import minimize
 from .calibration import NumpyOperators, calibration_signature
 from .operators import as_numpy, resolve_device, to_tensor
 
+logger = logging.getLogger(__name__)
 
-def prepare_FIR_constraint(
+
+def prepare_backbone_constraint(
     field,
     image,
     error,
     coverage,
     holes,
-    FIR_WCS,
+    coarse_WCS,
     config,
     *,
     effective_FWHM,
@@ -23,19 +27,20 @@ def prepare_FIR_constraint(
     sample_margin=90,
     calibration_margin=200,
 ):
-    """Calibrate native FIR samples against retained optical pixels.
+    """Calibrate native coarse samples against retained optical pixels.
 
     Parameters
     ----------
     field : FieldData
         Working optical canvas with its WCS.
     image, error, coverage, holes : ndarray
-        Native FIR map and 1-sigma error in MJy/sr, coverage and exclusion mask.
-    FIR_WCS : astropy.wcs.WCS
-        WCS of the native FIR grid.
+        Native guide map and 1-sigma error in matching intensity units,
+        coverage and exclusion mask (True for excluded samples).
+    coarse_WCS : astropy.wcs.WCS
+        WCS of the native coarse grid.
     effective_FWHM : float
-        Actual effective resolution of the supplied FIR image in arcsec.
-        Must equal config.beam_FWHM. No filled FIR samples enter the likelihood.
+        Actual effective resolution of the supplied coarse image in arcsec.
+        Must equal config.beam_FWHM. No filled coarse samples enter the likelihood.
 
     Returns
     -------
@@ -44,19 +49,19 @@ def prepare_FIR_constraint(
         and an interpolated guide used only for initialization.
     """
     if field.WCS is None:
-        raise ValueError("An optical WCS is required for FIR alignment")
+        raise ValueError("An optical WCS is required for coarse alignment")
     if not np.isclose(effective_FWHM, config.beam_FWHM):
-        raise ValueError("Input FIR resolution differs from the requested beam")
+        raise ValueError("Input coarse resolution differs from the requested beam")
     if len({np.shape(v) for v in (image, error, coverage, holes)}) != 1:
-        raise ValueError("FIR image, error, coverage and holes must share a grid")
+        raise ValueError("Coarse image, error, coverage and holes must share a grid")
     holes = np.asarray(holes, dtype=bool)
     if sample_stride < 1 or sample_margin < 0 or calibration_margin < 0:
         raise ValueError(
-            "FIR sample stride and margins must be nonnegative (stride positive)"
+            "Coarse sample stride and margins must be nonnegative (stride positive)"
         )
     d = field.normalized(config)
     w = field.WCS
-    hw = FIR_WCS
+    hw = coarse_WCS
     n = field.image.shape[0]
     smooth_observed = NumpyOperators(field.PSF, config).smooth_observed
     yh, xh = np.indices(image.shape)
@@ -92,7 +97,7 @@ def prepare_FIR_constraint(
     )
     if int(cal.sum()) < 8:
         raise ValueError(
-            f"Only {int(cal.sum())} FIR calibration samples exceed support {threshold}; at least eight are required"
+            f"Only {int(cal.sum())} coarse calibration samples exceed support {threshold}; at least eight are required"
         )
     pivot = float(np.median(hv[cal]))
     hh = hv - pivot
@@ -102,7 +107,9 @@ def prepare_FIR_constraint(
         V = vv[sel]
         E = he[sel]
         if len(H) < 3:
-            raise ValueError("Insufficient FIR calibration samples in a spatial fold")
+            raise ValueError(
+                "Insufficient coarse calibration samples in a spatial fold"
+            )
         a, b = np.polyfit(H, V, 1)
         init = np.array([a, b, np.log(max(np.std(V - (a * H + b)), 0.03))])
 
@@ -183,6 +190,11 @@ def prepare_FIR_constraint(
     backbone = (
         a * (map_coordinates(hsafe, [iy, ix], order=1, mode="nearest") - pivot) + b
     )
+    logger.info(
+        "Backbone likelihood: %d native samples, %d calibration samples",
+        len(target),
+        int(cal.sum()),
+    )
     return dict(
         optical_signature=np.array(calibration_signature(field, config)),
         effective_FWHM=effective_FWHM,
@@ -191,12 +203,12 @@ def prepare_FIR_constraint(
         chol=chol,
         x=hx,
         y=hy,
-        herschel=hv,
-        herschel_error=he,
+        coarse_image=hv,
+        coarse_error=he,
         support=support,
         cal=cal,
         predicted=target,
-        observed_vis=vv,
+        observed_image=vv,
         sigma=sigma,
         backbone=backbone,
         calibration_covariance=cal_cov,

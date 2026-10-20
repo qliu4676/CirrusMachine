@@ -1,7 +1,14 @@
 prune src/cirrusmachine/legacy
 prune tests/legacy
-include notebooks/cutout_example_modeling.ipynb
-include notebooks/example_helpers.py
-include configs/cutout_ddV.yaml
-recursive-include external/scattering_transform/scattering *.py
-include external/scattering_transform/README.md
+prune scripts
+prune external
+prune product
+prune results
+prune examples/inputs
+prune examples/output
+prune examples/legacy
+include examples/cutout_example_modeling.ipynb
+include examples/example_helpers.py
+include examples/modeling.yaml
+include THIRD_PARTY_NOTICES
+include src/cirrusmachine/_vendor/scattering/UPSTREAM.json

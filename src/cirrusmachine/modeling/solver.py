@@ -8,7 +8,7 @@ import numpy as np
 import torch
 
 from .config import ModelingConfig
-from .halo import fit_halo
+from .diffuse import fit_diffuse
 from .logging import ModelingProgress
 from .operators import MaskedCovariance, as_numpy, beam_loss, resolve_device, to_tensor
 from .priors import initialize_cirrus
@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class ModelingResult:
-    """One draw's cirrus, corrected image and conditional halo, in image ADU.
+    """One draw's cirrus, corrected image and conditional halo, in input image units.
 
     Maps cover the scientific crop. ``corrected`` is observed minus cirrus;
     sky is reported separately. ``normalized`` retains the full FFT canvas.
@@ -44,7 +44,7 @@ def _halo(field, config, data, image, previous=None, *, initial=False):
         observed = data["mu"] + data["std"] * data["science"][field.crop]
         cirrus = data["mu"] + data["std"] * as_numpy(image)[field.crop]
         residual = observed - cirrus
-    proposal, info = fit_halo(
+    proposal, info = fit_diffuse(
         residual,
         field.source_clean[field.crop],
         field.center_xy,
@@ -95,11 +95,10 @@ def run_cirrus_halo_modeling(
 ) -> list[ModelingResult]:
     """Optimize each supplied draw with fixed masks and alternating halo/sky updates.
 
-    The six weights apply to S1/S2, P00, FIR, CDF, orientation and optical
-    likelihood. Targets refresh from observed pixels every 25 steps; halo and
-    sky refresh every 10. A tqdm bar refreshes at 10% milestones per draw.
-    Use ``progress=False`` to hide it, or pass a callback receiving a
-    draw/step/loss/learning_rate dictionary at the same milestones.
+    The six weights apply to S1/S2, P00, coarse, CDF, orientation and optical
+    likelihood. ``target_refresh_steps`` and ``halo_refresh_steps`` control
+    the target and halo/sky update intervals.
+    Use ``progress=False`` to hide progress bar.
     ``extra_variance`` may supply a validated, frozen shared allowance in
     normalized intensity squared; otherwise it is derived from allowance_seeds.
     """
@@ -109,11 +108,11 @@ def run_cirrus_halo_modeling(
     if not np.isclose(
         float(prior.beam["sigma"]), config.beam_FWHM / config.pixel_scale / 2.354820045
     ):
-        raise ValueError("FIR beam mismatch; rebuild the prior")
+        raise ValueError("coarse beam mismatch; rebuild the prior")
     device = resolve_device(config.device)
     started = time.perf_counter()
     logger.info(
-        "Preparing %d draw(s) on %s: %d steps each, %.1f arcsec FIR likelihood",
+        "Preparing %d draw(s) on %s: %d steps each, %.1f arcsec backbone likelihood",
         len(initializations),
         device,
         config.steps,
@@ -167,6 +166,7 @@ def run_cirrus_halo_modeling(
         angles.append(np.arctan2(freq[iy], freq[ix]))
     phase = tensor(np.exp(2j * np.array(angles)), torch.complex64)[None, :, None]
     weights = tensor(config.weights, torch.float32)
+    stage_ends = np.cumsum(config.stage_steps)
     results = []
     for index, initial in enumerate(initializations):
         if (
@@ -229,7 +229,10 @@ def run_cirrus_halo_modeling(
                         )
                     )
                 lr = config.learning_rates[
-                    min(step // config.stage_steps, len(config.learning_rates) - 1)
+                    min(
+                        int(np.searchsorted(stage_ends, step, side="right")),
+                        len(config.learning_rates) - 1,
+                    )
                 ]
                 for group in opt.param_groups:
                     group["lr"] = lr
@@ -326,9 +329,9 @@ def run_cirrus_halo_modeling(
         halo_image = halo[field.crop] * d["std"]
         inner = None
         if config.inner_refit:
-            from .halo import refit_inner_halo
+            from .diffuse import refit_inner_diffuse
 
-            halo_image, inner = refit_inner_halo(
+            halo_image, inner = refit_inner_diffuse(
                 field.image[field.crop] - cirrus - sky,
                 halo_image,
                 field.source_clean[field.crop],

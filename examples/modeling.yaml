@@ -4,7 +4,7 @@
 # Main settings: check these against the input data and science region.
 device: auto  # CUDA when available, otherwise CPU.
 pixel_scale: 0.9
-beam_FWHM: 36.0  # Effective resolution of the supplied FIR map.
+beam_FWHM: 36.0  # Effective resolution of the supplied coarse guide.
 beta_grid: [1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5]  # Calibrate P(k) proportional to k^-beta.
 core_radius: 32.0
 core_taper: 5.0
@@ -24,15 +24,15 @@ split_sigma_pixels: 12.0
 broad_length_pixels: 60.0
 prior_lowpass_pixels: 30.0
 prior_weight: 5.0
-weights: [1.0, 0.1, 1.0, 1.0, 0.01, 2.0]  # S1/S2, P00, FIR, CDF, orientation, optical.
+weights: [1.0, 0.1, 1.0, 1.0, 0.01, 2.0]  # S1/S2, P00, coarse, CDF, orientation, optical.
 calibration_min_support: 0.5
 reference_count: 16
 validation_count: 8
 
 # Optimization controls: optional tuning for convergence and runtime.
-steps: 150
+steps: 100
 learning_rates: [0.005, 0.003, 0.001]
-stage_steps: 50
+stage_steps: [40, 30, 30]  # Duration of each learning rate, totaling 100 steps.
 halo_refresh_steps: 10
 target_refresh_steps: 25
 halo_damping: 0.5

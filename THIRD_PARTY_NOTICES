@@ -1,0 +1,12 @@
+CirrusMachine includes code from scattering_transform by Sihao Cheng and
+contributors: https://github.com/SihaoCheng/scattering_transform
+
+Source revision: 04f36a64677c038538d34828430518cf749e77df
+Location: src/cirrusmachine/_vendor/scattering
+Changes: absolute internal imports converted to relative imports; backend
+selection fixed to PyTorch (CPU or CUDA), independent of external settings.
+The unused skcuda backend is omitted.
+UPSTREAM.json records the original and bundled file hashes.
+
+The upstream revision contains no license file. CirrusMachine's MIT license
+does not grant rights to this third-party code.

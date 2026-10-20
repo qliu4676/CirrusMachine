@@ -1,6 +1,7 @@
-"""FIR-conditioned cirrus modeling and observed halo recovery."""
+"""Conditioned cirrus modeling and diffuse emission recovery."""
 
 from .calibration import StatisticalCalibration, calibrate_statistics
+from .coarse import prepare_backbone_constraint
 from .config import DrawSeeds, ModelingConfig, load_config, save_config
 from .data import (
     FieldData,
@@ -10,7 +11,7 @@ from .data import (
     prepare_injection,
     sersic_image,
 )
-from .fir import prepare_FIR_constraint
+from .diffuse import fit_diffuse, refit_inner_diffuse
 from .io import load_calibration, save_calibration, save_modeling_results
 from .logging import configure_logging
 from .photometry import (
@@ -46,7 +47,9 @@ __all__ = [
     "sersic_image",
     "StatisticalCalibration",
     "calibrate_statistics",
-    "prepare_FIR_constraint",
+    "prepare_backbone_constraint",
+    "fit_diffuse",
+    "refit_inner_diffuse",
     "CirrusPrior",
     "InitialRealization",
     "build_cirrus_prior",

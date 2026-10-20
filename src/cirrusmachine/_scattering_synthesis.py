@@ -1,4 +1,4 @@
-"""CirrusMachine's image-increment synthesis adapter for Cheng's estimators.
+"""Image-increment synthesis adapter for Cheng's estimators.
 
 The upstream filters and statistics are used unchanged. These two entry points
 retain our seeded perturbation around the initial image and upstream API fixes.
@@ -9,7 +9,7 @@ import time
 
 import numpy as np
 import torch
-from scattering import (
+from ._vendor.scattering import (
     AlphaScattering2d_cov,
     Bispectrum_Calculator,
     Scattering2d,

@@ -1,0 +1,68 @@
+{
+  "project": "scattering_transform",
+  "authors": "Sihao Cheng and contributors",
+  "repository": "https://github.com/SihaoCheng/scattering_transform",
+  "revision": "04f36a64677c038538d34828430518cf749e77df",
+  "changes": "Internal imports made relative; backend selector fixed to PyTorch (CPU or CUDA) without external configuration or skcuda imports. Numerical kernels unchanged.",
+  "license_file_in_upstream_revision": null,
+  "files": {
+    "AlphaScattering2d_cov.py": {
+      "upstream_sha256": "59506a468e53aca052f592a2a5a385eb52d378d862bdf473b9c8945bd2f66603",
+      "vendored_sha256": "b7f843b36e362d13086ccb8cb30222d477c5e30dace1111e69d3d423d7e1d07c"
+    },
+    "FiltersSet.py": {
+      "upstream_sha256": "8a114cf011ac207fcd00768201eb82f726a269ed31f0096cce1c8167e2444f9d",
+      "vendored_sha256": "8a114cf011ac207fcd00768201eb82f726a269ed31f0096cce1c8167e2444f9d"
+    },
+    "Scattering2d.py": {
+      "upstream_sha256": "76dde199da1077bdc560135d2fd3f6df1667bd50d85a6e8cc613d3e8fbed32f1",
+      "vendored_sha256": "9269b5bfa24922406ef765512936d58d4edcfa337a43ff91cf1cc871fcc7fc11"
+    },
+    "__init__.py": {
+      "upstream_sha256": "db68086b92740fcc28a4702fa04a11937c7b06222d3129a8068613432351bbb0",
+      "vendored_sha256": "ff5203c9c4c265c33dc8cebc08d58c8770d9025b521d5f4c7fa3a0d17f796136"
+    },
+    "angle_transforms.py": {
+      "upstream_sha256": "076309ab9f54d5bcd29e817dddb2dfa2fd2f03653424ca192ce8a8e8a8bebb03",
+      "vendored_sha256": "076309ab9f54d5bcd29e817dddb2dfa2fd2f03653424ca192ce8a8e8a8bebb03"
+    },
+    "backend/__init__.py": {
+      "upstream_sha256": "74a66cea0ba2a21f43a2c036f7f56fe1987648c772836100d993d83bc914e0c0",
+      "vendored_sha256": "c0f2c6ba98c7e119490d4a72bc4aeb653d6c16f99972902fcf509e538078ec22"
+    },
+    "backend/backend_common.py": {
+      "upstream_sha256": "493524809de3125a8d9c840854f995ed654ae356e522f40016afbd82f1778583",
+      "vendored_sha256": "493524809de3125a8d9c840854f995ed654ae356e522f40016afbd82f1778583"
+    },
+    "backend/backend_torch.py": {
+      "upstream_sha256": "2847bb0971b2cd252374194e431adc7812523c0d3eaaa25f974752906af7fe3b",
+      "vendored_sha256": "2847bb0971b2cd252374194e431adc7812523c0d3eaaa25f974752906af7fe3b"
+    },
+    "backend/backend_utils.py": {
+      "upstream_sha256": "9013cc78bedae793efde11b6a05cbb5d0a69f37d53d3b1eda95843105a9c45c4",
+      "vendored_sha256": "9013cc78bedae793efde11b6a05cbb5d0a69f37d53d3b1eda95843105a9c45c4"
+    },
+    "bump_steerable_2d.py": {
+      "upstream_sha256": "a0cfaca772f3c432719fde645525944fc5d0364b172e54c01a923e0a055d9ea8",
+      "vendored_sha256": "a0cfaca772f3c432719fde645525944fc5d0364b172e54c01a923e0a055d9ea8"
+    },
+    "polyspectra_calculators.py": {
+      "upstream_sha256": "a8070df3695edcc23da5cdefdc7d65380f99f6898be9056b7ace54286779e863",
+      "vendored_sha256": "a8070df3695edcc23da5cdefdc7d65380f99f6898be9056b7ace54286779e863"
+    },
+    "scale_transforms.py": {
+      "upstream_sha256": "c1a8d36c5e320758444fc24ce0f786dd165820b969acfcbd0a6687f21141c0de",
+      "vendored_sha256": "c1a8d36c5e320758444fc24ce0f786dd165820b969acfcbd0a6687f21141c0de"
+    },
+    "utils.py": {
+      "upstream_sha256": "25c8969f62909732cc4e928da7afdb8de6a51c735f9cd7c24c736fde4aff9a22",
+      "vendored_sha256": "25c8969f62909732cc4e928da7afdb8de6a51c735f9cd7c24c736fde4aff9a22"
+    }
+  },
+  "omitted_files": {
+    "backend/backend_skcuda.py": {
+      "upstream_sha256": "f03fffbce2163bd25aeb25f49ac57d3c82c73b5337e3388d27c026039621a8f8",
+      "reason": "Unused GPU-only backend; CirrusMachine uses PyTorch for both CPU and CUDA."
+    }
+  }
+}

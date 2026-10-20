@@ -107,7 +107,11 @@ def covariance_kernel(kernels, variances):
 
 
 def draw_noise(shape, kernels, variances, seed, *, device="cpu", dtype=torch.float64):
-    """Draw compact correlated noise; PCG64 phases are reproducible across devices."""
+    """Draw compact correlated noise with seeded, device-independent random samples.
+
+    NumPy's PCG64 Generator creates the random samples on CPU.
+    PyTorch convolves them on the selected device.
+    """
     rng = np.random.default_rng(seed)
     pad = kernels.shape[-1]
     out = torch.zeros(tuple(shape), dtype=dtype, device=device)
@@ -126,7 +130,7 @@ def draw_noise(shape, kernels, variances, seed, *, device="cpu", dtype=torch.flo
 
 
 def PSF_transfer(shape, kernel, *, device="cpu"):
-    """Transfer of the supplied delivered-VIS PSF, applied once to intrinsic texture."""
+    """Transfer of the supplied delivered-image PSF, applied once to intrinsic texture."""
     kernel = to_tensor(kernel, dtype=torch.float64, device=device)
     if kernel.ndim != 2 or any(k > n for k, n in zip(kernel.shape, shape)):
         raise ValueError("PSF must fit the canvas")
@@ -262,10 +266,10 @@ class _Quadratic(torch.autograd.Function):
 
 
 def beam_loss(c, sample_grid, target, precision_cholesky, sigma):
-    """VIS latent -> common-beam native Herschel samples, correlated residual.
+    """Compare a latent image with native coarse samples at a common beam.
 
     All coordinates are in the real padded field. No map wrapping or filled
-    Herschel values. Calibration/discrepancy covariance is supplied separately.
+    guide values. Calibration/discrepancy covariance is supplied separately.
     """
     r = int(np.ceil(4 * sigma))
     t = torch.arange(-r, r + 1, dtype=c.dtype, device=c.device)

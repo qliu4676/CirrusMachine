@@ -12,23 +12,38 @@ from cirrusmachine.modeling import sersic_image, surface_brightness_zeropoint
 from cirrusmachine.modeling.logging import ModelingProgress, configure_logging
 
 
-def test_sersic_central_and_effective_intensities():
-    n, Re, Ie = 2, 3, 1.7
-    I0 = Ie * np.exp(gammaincinv(2 * n, 0.5))
+def test_sersic_central_and_effective_surface_brightness():
+    n, Re, intensity, SB_ZP = 2, 3, 1.7, 25.0
+    Ie = SB_ZP - 2.5 * np.log10(intensity)
+    I0 = Ie - 2.5 / np.log(10) * gammaincinv(2 * n, 0.5)
     args = dict(
-        shape=(11, 11), center_xy=(5, 5), pixel_scale=1, axis_ratio=1, device="cpu"
+        shape=(11, 11),
+        center_xy=(5, 5),
+        pixel_scale=1,
+        axis_ratio=1,
+        device="cpu",
+        SB_ZP=SB_ZP,
     )
     effective = sersic_image(components=[dict(n=n, Re_arcsec=Re, Ie=Ie)], **args)
     central = sersic_image(components=[dict(n=n, Re_arcsec=Re, I0=I0)], **args)
-    legacy = sersic_image(components=[dict(n=n, re_arcsec=Re, ie=Ie)], **args)
     torch.testing.assert_close(central, effective, rtol=1e-12, atol=1e-12)
-    torch.testing.assert_close(legacy, effective)
-    assert float(central[5, 5]) == pytest.approx(I0)
-    assert float(effective[5, 8]) == pytest.approx(Ie)
+    assert float(central[5, 5]) == pytest.approx(
+        intensity * np.exp(gammaincinv(2 * n, 0.5))
+    )
+    assert float(effective[5, 8]) == pytest.approx(intensity)
     with pytest.raises(ValueError, match="one of"):
         sersic_image(components=[dict(n=n, Re_arcsec=Re, Ie=Ie, I0=I0)], **args)
-    with pytest.raises(ValueError, match="nonnegative"):
+    with pytest.raises(ValueError, match="finite magnitudes"):
         sersic_image(components=[dict(n=n, Re_arcsec=Re, Ie=np.nan)], **args)
+    with pytest.raises(ValueError, match="SB_ZP"):
+        sersic_image(
+            components=[dict(n=n, Re_arcsec=Re, Ie=Ie)], **(args | {"SB_ZP": np.nan})
+        )
+    with pytest.raises(TypeError, match="SB_ZP"):
+        sersic_image(
+            components=[dict(n=n, Re_arcsec=Re, Ie=Ie)],
+            **{k: v for k, v in args.items() if k != "SB_ZP"},
+        )
 
 
 def test_surface_brightness_binning_conventions():
@@ -100,3 +115,33 @@ def test_logging_notebook_rerun_and_levels():
         assert stream.getvalue() == "[INFO] one message\n"
     finally:
         logger.handlers, logger.level, logger.propagate = previous
+
+
+def test_load_config_resolves_cpu_and_optionally_limits_threads(tmp_path, monkeypatch):
+    from cirrusmachine.modeling import load_config
+
+    path = tmp_path / "modeling.yaml"
+    path.write_text("{}")
+    calls = []
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
+    monkeypatch.setattr(torch, "set_num_threads", calls.append)
+    monkeypatch.setattr(torch, "get_num_threads", lambda: 8)
+    monkeypatch.setattr("cirrusmachine.modeling.config.os.cpu_count", lambda: 2)
+    assert load_config(path).device == "cpu"
+    assert calls == []
+    assert load_config(path, cpu_threads=4).device == "cpu"
+    assert calls == [2]
+    with pytest.raises(ValueError, match="cpu_threads"):
+        load_config(path, cpu_threads=0)
+
+
+def test_load_config_resolves_cuda_but_respects_explicit_cpu(tmp_path, monkeypatch):
+    from cirrusmachine.modeling import load_config
+
+    path = tmp_path / "modeling.yaml"
+    path.write_text("{}")
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+    monkeypatch.setattr(torch.cuda, "get_device_name", lambda device: "Test GPU")
+    assert load_config(path).device == "cuda"
+    path.write_text("device: cpu")
+    assert load_config(path).device == "cpu"

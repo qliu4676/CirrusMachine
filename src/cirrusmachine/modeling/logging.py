@@ -5,7 +5,8 @@ import math
 import os
 import sys
 
-from tqdm.auto import tqdm
+# Text output also works in notebook viewers without an ipywidgets renderer.
+from tqdm import tqdm
 
 
 class _Formatter(logging.Formatter):
@@ -43,9 +44,7 @@ class _Handler(logging.StreamHandler):
 def configure_logging(level="INFO", *, color="auto", stream=None):
     """Configure only CirrusMachine logging; safe to rerun in a notebook.
 
-    Levels follow Python logging (DEBUG, INFO, WARNING, ERROR). Automatic color
-    supports terminals and Jupyter, respects NO_COLOR, and is off in log files.
-    Only the level label is colored; message text keeps the default color.
+    Levels follow Python logging (DEBUG, INFO, WARNING, ERROR).
     Pass color=False for plain output or color=True to force ANSI colors.
     """
     if color not in (True, False, "auto"):
@@ -69,7 +68,7 @@ def configure_logging(level="INFO", *, color="auto", stream=None):
 
 
 class ModelingProgress:
-    """Refresh once per tenth of a draw, with guaranteed cleanup on failure."""
+    """Refresh once per 10% of a draw, with guaranteed cleanup on failure."""
 
     def __init__(self, steps, draw, draws, progress):
         self.steps, self.draw = steps, draw

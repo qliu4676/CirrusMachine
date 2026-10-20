@@ -1,5 +1,6 @@
-"""Observed images, explicit masks, and optional galaxy injection."""
+"""Observed images, explicit masks, and optional diffuse emission injection."""
 
+import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -10,17 +11,18 @@ from scipy.special import gammaincinv
 from .config import ModelingConfig
 from .operators import fft_convolve, resolve_device, to_tensor
 
+logger = logging.getLogger(__name__)
+
 
 @dataclass
 class FieldData:
     """Delivered optical image and masks on a square working canvas.
 
-    Intensities are ADU per delivered pixel (mean-binned images retain this
-    convention). Masks are True for usable pixels. ``donor`` excludes both
-    sources and the target; ``source_clean`` retains the target for halo fits.
-    ``crop`` gives the scientific image's y and x slices. The surrounding
-    context is retained for FFTs, with no imputation of measured source holes.
-    ``radius`` is an elliptical semimajor radius in arcsec on the whole canvas.
+    Intensities use the input image units; mean binning preserves these units. Masks are True for usable pixels.
+    ``donor`` excludes both sources and the target.
+    ``source_clean`` retains the target for diffuse light fits.
+    ``crop`` gives the scientific image's y and x slices.
+    ``radius`` is the elliptical semimajor radius in arcsec.
     """
 
     image: np.ndarray
@@ -76,7 +78,7 @@ class FieldData:
             or not np.isfinite(self.PSF).all()
             or not np.isclose(self.PSF.sum(), 1.0, atol=1e-5)
         ):
-            raise ValueError("PSF must be a finite unit-sum delivered-VIS kernel")
+            raise ValueError("PSF must be a finite unit-sum delivered-image kernel")
         if self.normalization is None:
             self.normalization = (
                 float(self.image[self.donor].mean()),
@@ -129,7 +131,7 @@ class FieldData:
 
 @dataclass
 class Injection:
-    """Observed injected field and separate known delivered-image truth in ADU."""
+    """Observed injected field and separate known truth in the same image units."""
 
     field: FieldData
     truth: np.ndarray
@@ -142,19 +144,22 @@ def sersic_image(
     components,
     *,
     pixel_scale,
+    SB_ZP,
     axis_ratio=0.6,
     PA_deg=30.0,
     device="auto",
 ):
     """Evaluate summed intrinsic Sérsic intensities.
 
-    Each component supplies ``n``, ``Re_arcsec``, and either ``Ie`` (intensity
-    at Re) or ``I0`` (central intensity), in image ADU. They obey
-    I0 = Ie * exp(b_n). The older ``ie`` and ``re_arcsec`` keys remain readable.
-    Position angle runs counterclockwise from image +x; center uses (x, y).
+    Each component supplies ``n``, ``Re_arcsec``, and either ``Ie`` (surface brightness
+    at Re) or ``I0`` (central surface brightness), both in mag/arcsec².
+    ``SB_ZP`` converts magnitudes to image intensity as 10**((SB_ZP - magnitude)/2.5).
+    Position angle runs counterclockwise from image +x. Center uses (x, y).
     """
     if not 0 < axis_ratio <= 1 or pixel_scale <= 0:
         raise ValueError("Invalid axis ratio or pixel scale")
+    if not np.isfinite(SB_ZP):
+        raise ValueError("SB_ZP must be finite")
     device = resolve_device(device)
     y, x = torch.meshgrid(
         torch.arange(shape[0], device=device, dtype=torch.float64),
@@ -169,18 +174,18 @@ def sersic_image(
     r = pixel_scale * torch.hypot(u, v)
     out = torch.zeros_like(r)
     for comp in components:
-        amplitudes = [key for key in ("Ie", "I0", "ie") if key in comp]
-        radii = [key for key in ("Re_arcsec", "re_arcsec") if key in comp]
-        if len(amplitudes) != 1 or len(radii) != 1:
-            raise ValueError("Supply one of Ie/I0 (legacy ie), and one Re_arcsec")
-        n, Re, intensity = comp["n"], comp[radii[0]], comp[amplitudes[0]]
-        if (
-            not np.isfinite([n, Re, intensity]).all()
-            or n <= 0
-            or Re <= 0
-            or intensity < 0
-        ):
-            raise ValueError("Sérsic n/Re must be positive and Ie nonnegative")
+        amplitudes = [key for key in ("Ie", "I0") if key in comp]
+        if len(amplitudes) != 1 or "Re_arcsec" not in comp:
+            raise ValueError("Supply one of Ie/I0, and Re_arcsec")
+        n, Re, magnitude = comp["n"], comp["Re_arcsec"], comp[amplitudes[0]]
+        if not np.isfinite([n, Re, magnitude]).all() or n <= 0 or Re <= 0:
+            raise ValueError("Sérsic n/Re must be positive and Ie/I0 finite magnitudes")
+        with np.errstate(over="ignore", under="ignore"):
+            intensity = np.power(10.0, (SB_ZP - magnitude) / 2.5)
+        if not np.isfinite(intensity) or intensity <= 0:
+            raise ValueError(
+                "Surface brightness is outside the supported intensity range"
+            )
         b_n = gammaincinv(2 * n, 0.5)
         if amplitudes[0] == "I0":
             out += intensity * torch.exp(-b_n * (r / Re).pow(1 / n))
@@ -193,6 +198,7 @@ def prepare_injection(
     field: FieldData,
     components,
     *,
+    SB_ZP,
     axis_ratio=0.6,
     PA_deg=30.0,
     PSF_native=None,
@@ -200,10 +206,14 @@ def prepare_injection(
     margin_pixels=24,
     device="auto",
 ) -> Injection:
-    """Sample intrinsic light, convolve once, mean-bin, and add to the field.
+    """Sample intrinsic model, convolve the PSF, mean-bin, and add to the field.
 
+    Components supply ``n``, ``Re_arcsec`` and either ``Ie`` or ``I0`` in
+    mag/arcsec². ``SB_ZP`` is the zeropoint for the field's intensity units;
+    mean binning preserves these units, so the oversampling factor does not
+    change this zeropoint.
     ``PSF_native`` must be sampled at working pixel_scale / oversample.
-    Supply the detector PSF explicitly; the field PSF describes the working
+    Supply the detector PSF explicitly. The field PSF describes the working
     pixels and is used only by the cirrus texture model. No sky is injected.
     """
     if PSF_native is None:
@@ -237,6 +247,7 @@ def prepare_injection(
             (fine_center[0], fine_center[1] - start),
             components,
             pixel_scale=field.pixel_scale / s,
+            SB_ZP=SB_ZP,
             axis_ratio=axis_ratio,
             PA_deg=PA_deg,
             device=device,
@@ -265,6 +276,8 @@ def prepare_injection(
         truth,
         dict(
             components=components,
+            SB_ZP=SB_ZP,
+            component_unit="mag/arcsec^2",
             axis_ratio=axis_ratio,
             PA_deg=PA_deg,
             oversample=s,
@@ -274,7 +287,7 @@ def prepare_injection(
 
 
 def load_field_data(path: str | Path, *, PSF: np.ndarray) -> FieldData:
-    """Load a portable, pickle-free working-grid NPZ (see modeling documentation)."""
+    """Load a pickle-free working-grid npz file."""
     with np.load(path, allow_pickle=False) as z:
         crop = tuple(slice(int(a), int(b)) for a, b in z["crop"])
         return FieldData(
@@ -308,10 +321,8 @@ def prepare_field_data(
     """Mean-bin a native image and retain only complete source-clean bins.
 
     ``source_mask`` and ``target_mask`` are True for excluded native pixels.
-    A centered integer crop discards incomplete edge bins (2000 pixels become
-    666 bins using native [1:1999]). The field center uses native (x, y) pixels;
-    output center and WCS account for bin centers and FFT-canvas placement.
-    Masks must be prepared before injection; no source detection runs here.
+    A centered integer crop discards incomplete edge bins. The field center
+    uses native (x, y) pixels. Masks must be prepared before injection.
     ``PSF`` is the delivered PSF on the resulting working grid.
     """
     image = np.asarray(image, dtype=float)
@@ -371,7 +382,7 @@ def prepare_field_data(
             )
         )
         working_WCS.wcs.crpix += [px, py]
-    return FieldData(
+    result = FieldData(
         canvas,
         donor,
         valid,
@@ -388,3 +399,5 @@ def prepare_field_data(
             native_crop=[[s.start, s.stop] for s in native_crop],
         ),
     )
+    logger.info("Working crop %s at %.1f arcsec/pixel", binned.shape, pixel)
+    return result

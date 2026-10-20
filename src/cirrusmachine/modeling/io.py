@@ -1,7 +1,8 @@
-"""Portable numeric calibration archives and model outputs."""
+"""Input/output save and load; configuration and arrays load."""
 
 import io
 import json
+import logging
 import platform
 from dataclasses import asdict
 from pathlib import Path
@@ -12,6 +13,8 @@ from astropy.io import fits
 
 from .calibration import StatisticalCalibration
 from .config import save_config
+
+logger = logging.getLogger(__name__)
 
 
 def _json(value):
@@ -57,6 +60,7 @@ def load_calibration(path, field, config):
     ]
     result = StatisticalCalibration(*groups, meta["signature"], meta["diagnostics"])
     result.validate(field, config)
+    logger.info("Loaded statistical calibration matching the data, masks and settings.")
     return result
 
 

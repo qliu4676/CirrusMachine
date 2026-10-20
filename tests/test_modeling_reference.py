@@ -22,7 +22,7 @@ from cirrusmachine.modeling import (
     run_cirrus_halo_modeling,
 )
 from cirrusmachine.modeling.calibration import calibration_signature
-from cirrusmachine.modeling.halo import refit_inner_halo
+from cirrusmachine.modeling.diffuse import refit_inner_diffuse
 from cirrusmachine.modeling.io import load_arrays
 
 pytestmark = pytest.mark.skipif(
@@ -101,7 +101,7 @@ def test_saved_inner_halo(reference):
     saved = load_arrays(output / "checkpoint_150.npz")
     info = json.loads((output / "halo_150.json").read_text())
     obs = float(data["mu"]) + float(data["std"]) * science["observed"][field.crop]
-    result, report = refit_inner_halo(
+    result, report = refit_inner_diffuse(
         obs - saved["image"].astype(float) - float(saved["sky_ADU"]),
         saved["halo"].astype(float),
         field.source_clean[field.crop],

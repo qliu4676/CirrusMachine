@@ -11,9 +11,8 @@ import torch
 import torch.nn.functional as F
 from torch.utils.checkpoint import checkpoint
 
-from scattering import Scattering2d
-from scattering.Scattering2d import cut_high_k_off
-
+from .._vendor.scattering import Scattering2d
+from .._vendor.scattering.Scattering2d import cut_high_k_off
 from .operators import draw_noise, gaussian_filter, resolve_device
 
 

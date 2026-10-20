@@ -1,4 +1,4 @@
-"""Galactic cirrus synthesis and FIR-conditioned cirrus/halo modeling."""
+"""Galactic cirrus synthesis and diffuse emission recovery with coarse guides."""
 
 from .synthesis import (
     MockSynthesisConfig,

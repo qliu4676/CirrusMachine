@@ -1,5 +1,6 @@
-"""FIR-conditioned broad fields and independent five-band texture phases."""
+"""Conditioned broad fields and independent five-band texture phases."""
 
+import logging
 from dataclasses import dataclass
 
 import numpy as np
@@ -7,6 +8,8 @@ import torch
 
 from .config import DrawSeeds, ModelingConfig
 from .operators import gaussian_filter, power_field, resolve_device, to_tensor
+
+logger = logging.getLogger(__name__)
 
 
 def _cg(apply, rhs, precondition, *, rtol=2e-5, maxiter=1500):
@@ -109,7 +112,7 @@ class BroadModel:
 
 
 class TextureGenerator:
-    """Five calibrated frequency bands; independent, delivered-VIS fields."""
+    """Five calibrated frequency bands; independent, delivered-image fields."""
 
     def __init__(self, model, PSF, config):
         self.config = config
@@ -195,23 +198,22 @@ class InitialRealization:
 def build_cirrus_prior(
     field, beam: dict, calibration, config: ModelingConfig
 ) -> CirrusPrior:
-    """Condition a broad cirrus field on the retained observations and FIR guide.
+    """Condition a broad cirrus field on the retained observations and coarse guide.
 
-    ``beam`` contains calibrated native FIR targets and their full covariance
-    Cholesky factor. Its beam must match config; stale 18 arcsec products are
-    rejected for a 36 arcsec run. No injected truth is used.
+    ``beam`` contains calibrated native broad targets and their full covariance
+    Cholesky factor. Its beam must match config.
     """
     expected = config.beam_FWHM / config.pixel_scale / 2.354820045
     if not np.isclose(float(beam["sigma"]), expected, rtol=1e-7):
         raise ValueError(
-            "Beam mismatch: recalibrate FIR targets/covariance at the requested resolution"
+            "Beam mismatch: recalibrate coarse targets/covariance at the requested resolution"
         )
     calibration.validate(field, config)
     from .calibration import calibration_signature
 
     if str(beam.get("optical_signature", "")) != calibration_signature(field, config):
         raise ValueError(
-            "FIR calibration is missing or stale for these observations and masks"
+            "coarse calibration is missing or stale for these observations and masks"
         )
     d = field.normalized(config)
     device = resolve_device(config.device)
@@ -264,4 +266,5 @@ def initialize_cirrus(
             guide + gaussian_filter(draw - guide, config.split_sigma_pixels) + texture
         )
         result.append(InitialRealization(initial.float(), pair))
+    logger.info("Prepared %d initial draw(s)", len(result))
     return result

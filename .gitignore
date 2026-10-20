@@ -183,7 +183,6 @@ cython_debug/
 # Local science inputs, caches, figures, and temporarily untracked notebooks
 /product/
 /result/
-/notebooks/
 /data/
 /results/
 .DS_Store
@@ -193,13 +192,10 @@ cython_debug/
 /scripts/
 /configs/
 
-# Include the reusable modeling regression tests and reviewed configuration.
+# Include the reusable modeling regression tests.
 !/tests/
 /tests/*
 !/tests/test_modeling*.py
-!/configs/
-/configs/*
-!/configs/cutout_ddV.yaml
 # Keep local Markdown notes out of commits; README files remain eligible.
 *.[mM][dD]
 ![Rr][Ee][Aa][Dd][Mm][Ee].[mM][dD]
@@ -207,8 +203,13 @@ cython_debug/
 # Historical implementations are retained only for local research workflows.
 /src/cirrusmachine/legacy/
 
-# Share the current example; keep historical notebooks local.
-!/notebooks/
-/notebooks/*
-!/notebooks/cutout_example_modeling.ipynb
-!/notebooks/example_helpers.py
+# Local dependency checkouts and private notebook environments.
+/external/
+/setup_scattering_colab.py
+/private/
+
+# Share the local example; keep inputs, outputs and historical work local.
+/examples/*
+!/examples/cutout_example_modeling.ipynb
+!/examples/example_helpers.py
+!/examples/modeling.yaml

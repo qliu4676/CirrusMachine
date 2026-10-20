@@ -1,9 +1,4 @@
-"""Calibration extracted from retained-pixel reference and five-band preparation.
-
-Bootstrap targets are used only to calibrate angular texture guides. The final
-and online targets use independent masked noise corrections, never candidate
-statistics inside hidden pixels. See docs/modeling.md for the source lineage.
-"""
+"""Calibration extracted from retained-pixel reference and preparation."""
 
 import hashlib
 import json
@@ -252,7 +247,7 @@ def calibrate_spectrum(d, PSF, config, crop):
         "blocked_fits": sensitivity,
         "white_variance_floor": floor,
         "limitations": [
-            "No independent VIS exposure differences available in inspected inputs.",
+            "No independent image exposure differences available in inspected inputs.",
             "Power-law/compact-noise decomposition is not unique.",
             "Stationary covariance must be bracketed; unresolved sources and residual stripes can contaminate it.",
         ],
@@ -769,7 +764,7 @@ def calibrate_statistics(
     noise, noise_report = calibrate_spectrum(d, field.PSF, config, field.crop)
     report("bootstrap angular reference")
     bootstrap = bootstrap_references(d, noise, field.PSF, config)
-    report("five-band texture calibration")
+    report("texture calibration")
     texture = refine_texture(d, noise, bootstrap, field.PSF, config)
     report("independent mask-transfer calibration")
     targets, target_report = calibrate_targets(

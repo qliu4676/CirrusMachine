@@ -1,13 +1,17 @@
 """Source-clean surface brightness profiles and signed aperture fluxes."""
 
+import logging
+
 import numpy as np
 import torch
 
 from .operators import as_numpy, resolve_device, to_tensor
 
+logger = logging.getLogger(__name__)
+
 
 def estimate_sky(image, valid, radius, annulus=(180.0, 220.0), *, device="auto"):
-    """Return a 3-sigma median/MAD-clipped mean sky in image ADU."""
+    """Return a 3-sigma median/MAD-clipped mean sky in input image units."""
     x, r, mask = _inputs(image, valid, radius, device)
     if len(annulus) != 2 or not 0 <= annulus[0] < annulus[1]:
         raise ValueError("Sky annulus must be increasing and nonnegative")
@@ -32,7 +36,7 @@ def estimate_sky(image, valid, radius, annulus=(180.0, 220.0), *, device="auto")
         retained_pixels=values.numel(),
         source_clean_pixels=int(use.sum()),
         annulus_arcsec=list(annulus),
-        estimator="3sigma median/MAD clip, max5 passes, retained mean",
+        estimator="3-sigma median/MAD clip, max5 passes, retained mean",
     )
 
 
@@ -49,23 +53,21 @@ def _inputs(image, valid, radius, device):
 def surface_brightness_zeropoint(ZP, intensity_pixel_scale):
     """Convert a flux ZP to mag/arcsec² for the image's intensity units.
 
-    Use the pixel scale in arcsec associated with the supplied flux ZP.
-    Mean binning retains this intensity scale, even when the WCS grid changes;
-    sum binning requires the summed-pixel scale instead.
+    Use the pixel scale in arcsec associated with the supplied flux ZP. Mean binning
+    retains this intensity scale. Sum binning requires the summed-pixel scale instead.
     """
     if not np.isfinite([ZP, intensity_pixel_scale]).all() or intensity_pixel_scale <= 0:
         raise ValueError("ZP must be finite and intensity pixel scale positive")
-    return float(ZP + 5 * np.log10(intensity_pixel_scale))
+    SB_ZP = float(ZP + 5 * np.log10(intensity_pixel_scale))
+    return SB_ZP
 
 
 def measure_profile(image, valid, radius, edges, *, SB_ZP, sky=0.0, device="auto"):
-    """Measure clipped annular intensity (ADU) and surface brightness (mag/arcsec²).
+    """Measure clipped annular intensity and surface brightness (mag/arcsec²).
 
-    Radius and edges are semimajor radii in arcsec. Each annulus uses the
-    reference's 3-sigma median/MAD clipping, at most five passes. Bins with fewer
-    than four pixels are undefined. Nonpositive intensities have NaN magnitude.
-    ``SB_ZP`` is the explicit surface-brightness zeropoint for the input
-    intensity units; use ``surface_brightness_zeropoint`` to derive it.
+    Radius and edges are semimajor radii in arcsec. Each annulus uses the reference
+    3-sigma median/MAD clipping. Bins with fewer than four pixels are undefined.
+    ``SB_ZP`` is the explicit surface-brightness zeropoint for the input intensity units.
     """
     if not np.isfinite(SB_ZP):
         raise ValueError("SB_ZP must be finite")
@@ -114,12 +116,10 @@ def measure_profile(image, valid, radius, edges, *, SB_ZP, sky=0.0, device="auto
 def measure_cumulative_light(
     image, valid, radius, apertures, *, sky=0.0, pixel_scale=0.9, device="auto"
 ):
-    """Sum signed source-clean pixels inside each semimajor aperture.
+    """Sum source-masked pixels inside each semimajor aperture.
 
-    Returns ``flux`` in summed working-pixel ADU and ``intensity_area`` as
-    flux times pixel area in arcsec². This preserves the manuscript aperture
-    convention: no clipping of aperture light, no area correction for holes,
-    and no inference of total light. Compare truth and data on the same mask.
+    Returns ``flux`` in summed working-pixel intensity units and ``intensity_area`` as
+    flux times pixel area in arcsec². Compare truth and data on the same mask.
     Clipped sky is supplied separately and subtracted once per retained pixel.
     """
     x, r, mask = _inputs(image, valid, radius, device)
