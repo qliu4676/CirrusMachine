@@ -98,8 +98,7 @@ def export_inputs(
 
     The optical mask's bit 256 marks the target; all other bits mark sources.
     Coarse samples/error/coverage remain native; MASK_RAD supplies excluded sources.
-    effective_FWHM records the adopted coarse resolution, not a smoothing request.
-    Existing directories are rejected. Original inputs are never changed.
+    effective_FWHM records the adopted coarse resolution.
     """
     paths = dict(
         optical=optical,
@@ -198,7 +197,7 @@ def load_inputs(directory):
     with np.load(directory / "PSF.npz", allow_pickle=False) as archive:
         PSFs = {k: archive[k] for k in archive.files}
     logger.info(
-        "Loaded optical %s and coarse guide %s; input checksums verified",
+        "Loaded optical %s and coarse guide %s; input verified",
         optical.shape,
         arrays["IMAGE"].shape,
     )
@@ -289,7 +288,7 @@ def show_image(
     cmap = plt.get_cmap(cmap).copy()
     cmap.set_bad(mask_color)
     artist = ax.imshow(shown, origin="lower", cmap=cmap, vmin=limits[0], vmax=limits[1])
-    ax.set(xlabel="Working x (pixel)", ylabel="Working y (pixel)", title=title)
+    ax.set(xlabel="X [pixel]", ylabel="Y [pixel]", title=title)
     ax.figure.colorbar(artist, ax=ax, label="ADU", shrink=0.8)
     return ax
 
@@ -300,13 +299,13 @@ def plot_surface_brightness(profiles, *, ax=None):
     for name, profile in profiles.items():
         ax.plot(profile["radius"], profile["surface_brightness"], label=name)
     ax.set(
-        xlabel="Semimajor radius (arcsec)",
+        xlabel="Semi-major radius (arcsec)",
         ylabel="Surface brightness (mag arcsec$^{-2}$)",
     )
     if not ax.yaxis_inverted():
         ax.invert_yaxis()
     ax.legend()
-    ax.set_ylim(32, 18)
+    ax.set_ylim(31, 19)
     return ax
 
 

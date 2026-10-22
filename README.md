@@ -20,6 +20,10 @@ No GPU is required. The default `device="auto"` uses CUDA when available and
 otherwise CPU; `device="cpu"` always uses CPU. GPU use is optional and requires
 a compatible driver and a CUDA-enabled PyTorch build; MPS is unsupported.
 
+A Google Colab T4 GPU test of the 100-step example was about 8–9× faster in
+preparation/calibration and 4–5× faster in modeling than the CPU backend on the
+same Colab host (2 vCPUs).
+
 ## Example
 
 Open [the modeling notebook](examples/cutout_example_modeling.ipynb) for diffuse
@@ -39,16 +43,22 @@ from cirrusmachine import modeling as cm
 
 cm.configure_logging("INFO")
 config = cm.load_config("examples/modeling.yaml")
+
+# Calibrate image statistics and the FIR coarse-guide backbone constraint.
 statistics = cm.calibrate_statistics(field, config)
 beam = cm.prepare_backbone_constraint(
     field, inputs["coarse_image"], inputs["coarse_error"],
     inputs["coarse_coverage"], inputs["coarse_mask"], inputs["coarse_WCS"], config,
     effective_FWHM=inputs["metadata"]["effective_FWHM"],
 )
+
+# Build the cirrus prior and generate initial realizations.
 prior = cm.build_cirrus_prior(field, beam, statistics, config)
 initial = cm.initialize_cirrus(prior, config)
+
+# Model cirrus and diffuse light; select the first realization.
 result = cm.run_cirrus_halo_modeling(field, prior, initial, config)[0]
-corrected = result.corrected
+corrected = result.corrected  # Observed image with modeled cirrus subtracted.
 ```
 
 For injection test, both `Ie` (at `Re_arcsec`) and `I0` (central brightness) 
