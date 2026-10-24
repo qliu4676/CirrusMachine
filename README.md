@@ -5,28 +5,31 @@ and wavelet scattering statistics.
 
 ## Install
 
-Python 3.10+; from the repository checkout:
+Python 3.10+:
 
 ```bash
-python -m pip install -e .
+python -m pip install cirrusmachine
 # Optional notebook environment:
-python -m pip install -e ".[examples]"
+python -m pip install "cirrusmachine[examples]"
 ```
 
+The `[examples]` extra adds notebook dependencies; download the notebook and
+optional input files separately.
+
 CirrusMachine includes a private copy of [Cheng's scattering package](https://github.com/SihaoCheng/scattering_transform).
-The [`cirrusmachine._scattering_synthesis`](src/cirrusmachine/_scattering_synthesis.py) adapter
+The `cirrusmachine._scattering_synthesis` adapter
 retains the local image-increment optimization separately.
-No GPU is required. The default `device="auto"` uses CUDA when available and
-otherwise CPU; `device="cpu"` always uses CPU. GPU use is optional and requires
-a compatible driver and a CUDA-enabled PyTorch build; Apple Silicon Mac's MPS is unsupported.
+
+The default `device="auto"` uses CUDA when available and otherwise CPU. Setting `device="cpu"` to use CPU only. 
+GPU use is optional and requires a compatible driver and a CUDA-enabled PyTorch build. Apple Silicon Mac's MPS is unsupported.
 
 ## Example
 
 The notebook [the modeling notebook](examples/cutout_example_modeling.ipynb) 
 demonstrates an examplefor diffuse light injection, one representative cirrus 
 realization with 100 optimization steps, and surface-brightness and cumulative-flux comparisons.
-[example_helpers.py](examples/example_helpers.py)
-contains input and plotting helpers. 
+
+[example_helpers.py](examples/example_helpers.py) contains input and plotting helper function for the example. 
 
 To run the example, keep the optional input bundle in
 `examples/inputs/`: `Optical.fits`, `Mask.fits`, `FIR.fits`, `PSF.npz`, and

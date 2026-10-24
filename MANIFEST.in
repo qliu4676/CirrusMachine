@@ -2,7 +2,11 @@ prune src/cirrusmachine/legacy
 prune tests/legacy
 prune scripts
 prune external
+prune private
+prune data
+prune configs
 prune product
+prune result
 prune results
 prune examples/inputs
 prune examples/output
@@ -12,3 +16,4 @@ include examples/example_helpers.py
 include examples/modeling.yaml
 include THIRD_PARTY_NOTICES
 include src/cirrusmachine/_vendor/scattering/UPSTREAM.json
+global-exclude __pycache__ *.py[cod] .DS_Store
