@@ -2,6 +2,7 @@
 
 import logging
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 
 import numpy as np
@@ -36,7 +37,9 @@ class ModelingResult:
     diagnostics: dict
 
 
-def _halo(field, config, data, image, previous=None, *, initial=False):
+def _halo(
+    field, config, data, image, previous=None, *, initial=False, diffuse_model=None
+):
     residual = (data["science"][field.crop] - as_numpy(image)[field.crop]) * data["std"]
     if initial:
         # The reference initialization subtracts separately converted ADU maps.
@@ -44,7 +47,10 @@ def _halo(field, config, data, image, previous=None, *, initial=False):
         observed = data["mu"] + data["std"] * data["science"][field.crop]
         cirrus = data["mu"] + data["std"] * as_numpy(image)[field.crop]
         residual = observed - cirrus
-    proposal, info = fit_diffuse(
+    model = fit_diffuse if diffuse_model is None else diffuse_model
+    if not callable(model):
+        raise TypeError("diffuse_model must be callable")
+    proposal, info = model(
         residual,
         field.source_clean[field.crop],
         field.center_xy,
@@ -53,20 +59,45 @@ def _halo(field, config, data, image, previous=None, *, initial=False):
         previous,
         pixel_scale=config.pixel_scale,
     )
+    proposal = as_numpy(proposal)
+    if (
+        proposal.shape != residual.shape
+        or not np.isrealobj(proposal)
+        or not np.isfinite(proposal).all()
+        or (proposal < 0).any()
+    ):
+        raise ValueError(
+            "Diffuse model must return a finite, nonnegative real image matching the crop"
+        )
+    try:
+        sky = as_numpy(info["sky"]["value_ADU"])
+        valid_sky = sky.ndim == 0 and np.isrealobj(sky) and np.isfinite(sky)
+    except (KeyError, TypeError, IndexError):
+        valid_sky = False
+    if not isinstance(info, dict) or not valid_sky:
+        raise ValueError(
+            "Diffuse model info must contain a finite scalar info['sky']['value_ADU']"
+        )
+    # Keep the saved metadata and downstream arithmetic independent of tensor devices.
+    info = {**info, "sky": {**info["sky"], "value_ADU": float(sky)}}
     full = np.zeros(field.image.shape, dtype="f4")
     full[field.crop] = proposal / data["std"]
     return full, info
 
 
-def prepare_likelihood_variance(field, prior, config):
+def prepare_likelihood_variance(field, prior, config, *, diffuse_model=None):
     """Freeze one observed-exterior discrepancy allowance for all requested draws.
 
     Uses the designated allowance seeds (historical draw0), independently of
     the output draw list. No optimization or truth is needed to construct it.
+    ``diffuse_model`` follows the same interface as in
+    :func:`run_cirrus_halo_modeling`; use the same model for both calls.
     """
     initial = initialize_cirrus(prior, config, seeds=(config.allowance_seeds,))[0]
     d = field.normalized(config)
-    halo, info = _halo(field, config, d, initial.image, initial=True)
+    halo, info = _halo(
+        field, config, d, initial.image, initial=True, diffuse_model=diffuse_model
+    )
     exterior = d["donor"] & d["roi"]
     residual = (
         d["science"]
@@ -90,6 +121,7 @@ def run_cirrus_halo_modeling(
     initializations,
     config: ModelingConfig,
     *,
+    diffuse_model: Callable | None = None,
     extra_variance=None,
     progress=True,
 ) -> list[ModelingResult]:
@@ -101,7 +133,31 @@ def run_cirrus_halo_modeling(
     Use ``progress=False`` to hide progress bar.
     ``extra_variance`` may supply a validated, frozen shared allowance in
     normalized intensity squared; otherwise it is derived from allowance_seeds.
+
+    ``diffuse_model`` optionally replaces :func:`fit_diffuse` in allowance
+    preparation, initialization, every refresh and the final update. Its call is
+    ``model(residual, valid, center, measurement_radius, annulus, previous,
+    pixel_scale=...)``. Image, mask and radius inputs are NumPy arrays on the
+    scientific crop; ``valid`` is True for usable pixels and ``center`` is
+    crop-relative (x, y) in pixels.
+    Radii and annulus limits are in arcsec, and pixel scale is arcsec/pixel.
+    Residuals are observed minus cirrus, in input image units, with sky retained.
+    Exclude invalid pixels from fitting and do not modify the supplied arrays.
+
+    Return ``(model_image, info)``: a finite nonnegative image covering the crop
+    (including masked pixels), with sky excluded and in input image units, plus
+    a dict containing finite scalar ``info['sky']['value_ADU']`` in those same
+    units. Model the delivered, PSF-blurred image; no extra PSF convolution is
+    applied by the solver. NumPy images and PyTorch tensors are accepted;
+    tensors are detached and transferred to CPU. Remaining entries are
+    model-specific diagnostics passed back as ``previous`` at the next update;
+    ``previous=None`` starts each draw and the separate allowance
+    fit. Keep diagnostics serializable if saving results. Custom models own
+    their profile refinement: the default isophote-specific ``inner_refit`` is
+    applied only when ``diffuse_model`` is omitted or is ``fit_diffuse`` itself.
     """
+    if diffuse_model is not None and not callable(diffuse_model):
+        raise TypeError("diffuse_model must be callable")
     prior.calibration.validate(field, config)
     if not initializations:
         raise ValueError("At least one initial realization is required")
@@ -121,7 +177,9 @@ def run_cirrus_halo_modeling(
     d = field.normalized(config)
     nd, targets, beam = prior.calibration.noise, prior.calibration.targets, prior.beam
     if extra_variance is None:
-        extra_variance = prepare_likelihood_variance(field, prior, config)
+        extra_variance = prepare_likelihood_variance(
+            field, prior, config, diffuse_model=diffuse_model
+        )
     extra_variance = np.asarray(extra_variance)
     if (
         extra_variance.shape != field.image.shape
@@ -176,7 +234,9 @@ def run_cirrus_halo_modeling(
             raise ValueError("Initial realization must be finite and match the canvas")
         c = torch.nn.Parameter(initial.image.detach().to(device).clone())
         opt = torch.optim.Adam([c], lr=config.learning_rates[0])
-        halo, halo_info = _halo(field, config, d, c, initial=True)
+        halo, halo_info = _halo(
+            field, config, d, c, initial=True, diffuse_model=diffuse_model
+        )
         sky = halo_info["sky"]["value_ADU"] / d["std"]
         H = tensor(halo)
         halo_history = [dict(step=0, **halo_info)]
@@ -313,7 +373,9 @@ def run_cirrus_halo_modeling(
                 )
                 solves.append(dict(like.last))
                 if (step + 1) % config.halo_refresh_steps == 0:
-                    fresh, halo_info = _halo(field, config, d, c, halo_info)
+                    fresh, halo_info = _halo(
+                        field, config, d, c, halo_info, diffuse_model=diffuse_model
+                    )
                     halo = (
                         1 - config.halo_damping
                     ) * halo + config.halo_damping * fresh
@@ -321,14 +383,18 @@ def run_cirrus_halo_modeling(
                     H = tensor(halo)
                     halo_history.append(dict(step=step + 1, **halo_info))
                 status.update(step + 1, history[-1][1], lr)
-        halo, halo_info = _halo(field, config, d, c, halo_info)
+        halo, halo_info = _halo(
+            field, config, d, c, halo_info, diffuse_model=diffuse_model
+        )
         halo_history.append(dict(step=config.steps, final_fresh=True, **halo_info))
         sky = float(halo_info["sky"]["value_ADU"])
         normalized = as_numpy(c).copy()
         cirrus = (d["mu"] + d["std"] * normalized)[field.crop]
         halo_image = halo[field.crop] * d["std"]
         inner = None
-        if config.inner_refit:
+        if config.inner_refit and (
+            diffuse_model is None or diffuse_model is fit_diffuse
+        ):
             from .diffuse import refit_inner_diffuse
 
             halo_image, inner = refit_inner_diffuse(

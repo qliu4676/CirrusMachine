@@ -18,11 +18,7 @@ The [`cirrusmachine._scattering_synthesis`](src/cirrusmachine/_scattering_synthe
 retains the local image-increment optimization separately.
 No GPU is required. The default `device="auto"` uses CUDA when available and
 otherwise CPU; `device="cpu"` always uses CPU. GPU use is optional and requires
-a compatible driver and a CUDA-enabled PyTorch build; MPS is unsupported.
-
-A Google Colab T4 GPU test of the 100-step example was about 8–9× faster in
-preparation/calibration and 4–5× faster in modeling than the CPU backend on the
-same Colab host (2 vCPUs).
+a compatible driver and a CUDA-enabled PyTorch build; Apple Silicon Mac's MPS is unsupported.
 
 ## Example
 
@@ -35,8 +31,12 @@ contains input and plotting helpers.
 To run the example, keep the optional input bundle in
 `examples/inputs/`: `Optical.fits`, `Mask.fits`, `FIR.fits`, `PSF.npz`, and
 `inputs.json` (or set `CIRRUSMACHINE_DATA`). The notebook will create
-`examples/output/` for generated files, including caches (`statistics.npz`).
+`examples/output/` for generated files, including the caches (`statistics.npz`).
 
+
+A Google Colab T4 GPU test of the 100-step example is about 8–9× faster in
+preparation/calibration and 4–5× faster in modeling than the CPU backend on the
+same Colab host (2 vCPUs).
 
 ## Main usage
 
@@ -63,7 +63,11 @@ result = cm.run_cirrus_halo_modeling(field, prior, initial, config)[0]
 corrected = result.corrected  # Observed image with modeled cirrus subtracted.
 ```
 
-For injection test, both `Ie` (at `Re_arcsec`) and `I0` (central brightness) 
+* Passing `diffuse_model=MY_MODEL` to `run_cirrus_halo_modeling` allows one to replace 
+the default isophote fit with a callable matching `fit_diffuse` inputs and 
+`(model_image, info)` output (including `info["sky"]["value_ADU"]`).
+
+** For injection test, both `Ie` (at `Re_arcsec`) and `I0` (central brightness) 
 are in mag/arcsec².
 
 For a de Vaucouleurs profile injection: `n=4`, `Re_arcsec=20`, and

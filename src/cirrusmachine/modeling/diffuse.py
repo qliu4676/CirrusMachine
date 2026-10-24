@@ -233,6 +233,13 @@ def fit_diffuse(
 
     The profile is relative to the supplied sky annulus. Elliptical isophotes
     describe the delivered image; no intrinsic profile or injected truth is used.
+
+    Accepts a residual image, usable-pixel mask, crop-relative center (x, y)
+    in pixels, measurement-radius map and sky annulus in arcsec, and optional
+    previous-fit diagnostics. ``pixel_scale`` is arcsec/pixel. Return the
+    sky-subtracted model image in input image units and a diagnostics dict with
+    ``info['sky']['value_ADU']`` in those same units. This callable interface can
+    also be implemented by a custom ``diffuse_model`` in the cirrus solver.
     """
     started = time.monotonic()
     sky = sky_estimate(residual, valid, measurement_radius, annulus)
