@@ -26,17 +26,19 @@ same Colab host (2 vCPUs).
 
 ## Example
 
-Open [the modeling notebook](examples/cutout_example_modeling.ipynb) for diffuse
-light injection, one representative cirrus realization with 100 optimization
-steps, and surface-brightness and cumulative-flux comparisons.
+The notebook [the modeling notebook](examples/cutout_example_modeling.ipynb) 
+demonstrates an examplefor diffuse light injection, one representative cirrus 
+realization with 100 optimization steps, and surface-brightness and cumulative-flux comparisons.
 [example_helpers.py](examples/example_helpers.py)
-contains input and plotting helpers. Place the optional input bundle in
-`examples/inputs/`: `Optical.fits`, `Mask.fits`, `FIR.fits`, `PSF.npz`, and
-`inputs.json` (or set `CIRRUSMACHINE_DATA`). Notebook setup creates
-`examples/output/` for generated files, including `statistics.npz`.
-Pip installs dependencies; it does not create input or output directories.
+contains input and plotting helpers. 
 
-With the observed `field` and `inputs` prepared as in the notebook:
+To run the example, keep the optional input bundle in
+`examples/inputs/`: `Optical.fits`, `Mask.fits`, `FIR.fits`, `PSF.npz`, and
+`inputs.json` (or set `CIRRUSMACHINE_DATA`). The notebook will create
+`examples/output/` for generated files, including caches (`statistics.npz`).
+
+
+## Main usage
 
 ```python
 from cirrusmachine import modeling as cm
@@ -62,10 +64,10 @@ corrected = result.corrected  # Observed image with modeled cirrus subtracted.
 ```
 
 For injection test, both `Ie` (at `Re_arcsec`) and `I0` (central brightness) 
-are in **mag/arcsec²**.
+are in mag/arcsec².
 
 For a de Vaucouleurs profile injection: `n=4`, `Re_arcsec=20`, and
-`Ie=24.0`<sup>†</sup>:
+`Ie=24.0`:
 
 ```python
 injection = cm.prepare_injection(
@@ -80,7 +82,4 @@ field = injection.field
 In the example, the coarse guide is the source-clean FIR image from Herschel.
 `modeling.coarse` handles coarse guide calibration. 
 `modeling.diffuse` provides fit for smooth diffuse light.
-`run_cirrus_halo_modeling` provides joint modeling on cirrus and diffuse light.
-
-†: Based on the Sérsic law: $I(R)=I_e\exp[-b_4((R/R_e)^{1/4}-1)]$ with
-$b_4\simeq7.67$ ($I_e$ in linear intensity).
+`run_cirrus_halo_modeling` do joint modeling on cirrus and diffuse light.
