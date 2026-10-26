@@ -9,33 +9,35 @@ Python 3.10+:
 
 ```bash
 python -m pip install cirrusmachine
-# Optional notebook environment:
-python -m pip install "cirrusmachine[examples]"
+```
+
+To run the example from a clone:
+```bash
+git clone https://github.com/qliu4676/CirrusMachine.git
+cd CirrusMachine
+python -m pip install ".[examples]"
 ```
 
 The `[examples]` extra adds notebook dependencies; download the notebook and
 optional input files separately.
 
 CirrusMachine includes a private copy of [Cheng's scattering package](https://github.com/SihaoCheng/scattering_transform).
-The `cirrusmachine._scattering_synthesis` adapter
-retains the local image-increment optimization separately.
+Local image-increment optimization is retained by the `cirrusmachine._scattering_synthesis` adapter separately.
 
 The default `device="auto"` uses CUDA when available and otherwise CPU. Setting `device="cpu"` to use CPU only. 
 GPU use is optional and requires a compatible driver and a CUDA-enabled PyTorch build. Apple Silicon Mac's MPS is unsupported.
 
 ## Example
 
-The notebook [the modeling notebook](examples/cutout_example_modeling.ipynb) 
-demonstrates an examplefor diffuse light injection, one representative cirrus 
-realization with 100 optimization steps, and surface-brightness and cumulative-flux comparisons.
+The [notebook](examples/cutout_example_modeling.ipynb) 
+demonstrates an example for diffuse light injection, one representative cirrus 
+realization, and comparisons of surface-brightness and cumulative-flux profiles.
 
-[example_helpers.py](examples/example_helpers.py) contains input and plotting helper function for the example. 
+[example_helpers.py](examples/example_helpers.py) contains the setup and plotting helper function for the example notebook. 
 
-To run the example, keep the optional input bundle in
-`examples/inputs/`: `Optical.fits`, `Mask.fits`, `FIR.fits`, `PSF.npz`, and
-`inputs.json` (or set `CIRRUSMACHINE_DATA`). The notebook will create
-`examples/output/` for generated files, including the caches (`statistics.npz`).
-
+To run the example, download the [input bundle](https://github.com/qliu4676/CirrusMachine/releases/download/0.1.0/example_inputs-v0.1.0.zip) and place the extracted files in
+`examples/inputs/`: `Optical.fits`, `Mask.fits`, `FIR.fits`, `PSF.npz`, and `inputs.json`. 
+The notebook will create `examples/output/` for generated files, including the caches (`statistics.npz`).
 
 A Google Colab T4 GPU test of the 100-step example is about 8–9× faster in
 preparation/calibration and 4–5× faster in modeling than the CPU backend on the
