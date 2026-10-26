@@ -35,7 +35,7 @@ realization, and comparisons of surface-brightness and cumulative-flux profiles.
 
 [example_helpers.py](examples/example_helpers.py) contains the setup and plotting helper function for the example notebook. 
 
-To run the example, download the [input bundle](https://github.com/qliu4676/CirrusMachine/releases/download/0.1.0/example_inputs-v0.1.0.zip) and place the extracted files in
+To run the example, download the [input bundle](https://github.com/qliu4676/CirrusMachine/releases/download/0.1.0/cirrusmachine_example_inputs-v0.1.0.zip) and place the extracted files in
 `examples/inputs/`: `Optical.fits`, `Mask.fits`, `FIR.fits`, `PSF.npz`, and `inputs.json`. 
 The notebook will create `examples/output/` for generated files, including the caches (`statistics.npz`).
 
