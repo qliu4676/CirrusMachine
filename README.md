@@ -11,7 +11,7 @@ Python 3.10+:
 python -m pip install cirrusmachine
 ```
 
-To run the example from a clone:
+To run the example from a git clone:
 ```bash
 git clone https://github.com/qliu4676/CirrusMachine.git
 cd CirrusMachine
@@ -68,7 +68,7 @@ result = cm.run_cirrus_halo_modeling(field, prior, initial, config)[0]
 corrected = result.corrected  # Observed image with modeled cirrus subtracted.
 ```
 
-* Passing `diffuse_model=MY_MODEL` to `run_cirrus_halo_modeling` allows one to replace 
+\* Passing `diffuse_model=MY_MODEL` to `run_cirrus_halo_modeling` allows one to replace 
 the default isophote fit with a callable matching `fit_diffuse` inputs and 
 `(model_image, info)` output (including `info["sky"]["value_ADU"]`).
 
